@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
@@ -17,6 +17,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription, // ADICIONADO: Importação que faltava
   FormField,
   FormItem,
   FormLabel,
@@ -71,6 +72,16 @@ export default function EditCompanyPage() {
 
     const form = useForm<CompanyFormValues>({
         resolver: zodResolver(companyFormSchema),
+        defaultValues: {
+            name: "",
+            cnpj: "",
+            address: "",
+            ie: "",
+            cei: "",
+            city: "",
+            state: "",
+            plan: ""
+        }
     });
 
     useEffect(() => {
