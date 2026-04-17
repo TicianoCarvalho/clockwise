@@ -1,0 +1,25 @@
+{
+  "showCalculationsInReport": true,
+  "nightShiftStart": "22:00",
+  "nightShiftEnd": "05:00",
+  "overtime": {
+    "weekday": {
+      "firstHours": "02:00",
+      "percentage": 50
+    },
+    "saturday": {
+      "firstHours": "02:00",
+      "percentage": 50
+    },
+    "holidayAndDayOff": {
+      "percentage": 100
+    }
+  },
+  "additionalBreak": {
+    "enabled": false,
+    "duration": "00:15"
+  },
+  "tardinessTolerance": {
+    "rule": "tenMinutesDaily"
+  }
+}

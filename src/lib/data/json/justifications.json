@@ -1,0 +1,18 @@
+
+[
+  {
+    "id": "1768599873673",
+    "name": "Atestado Medico",
+    "description": "Atestado M."
+  },
+  {
+    "id": "esquecimento",
+    "name": "Esquecimento",
+    "description": "Esquecimento de registrar o ponto."
+  },
+  {
+    "id": "redundante",
+    "name": "Redundante",
+    "description": "Marcação de ponto redundante ou incorreta, removida manualmente."
+  }
+]

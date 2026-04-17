@@ -1,0 +1,21 @@
+
+[
+  {
+    "id": "1768962727871",
+    "description": "Relógio Matriz Principal",
+    "nickname": "REP-MATRIZ",
+    "model": "iDClass - REP-C",
+    "serialNumber": "ID000123456789",
+    "ipAddress": "192.168.1.100",
+    "port": 443,
+    "protocol": "HTTPS",
+    "repUsername": "admin",
+    "repPassword": "hashed_password_placeholder",
+    "location_building": "Prédio Principal",
+    "location_floor": 1,
+    "location_area": "Entrada",
+    "syncFrequency": "every_10_min",
+    "status": "Offline",
+    "lastSeen": "2024-01-01T12:00:00.000Z"
+  }
+]

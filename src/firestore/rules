@@ -1,0 +1,26 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Rule for the points subcollection
+    match /tenants/{tenantId}/employees/{cpf}/pontos/{pontoId} {
+      // KIOSK MODE - Ponto público: Allow anyone to create a clock-in record.
+      allow create: if true;
+      
+      // Other operations (read, update, delete) require an authenticated user.
+      allow read, update, delete: if request.auth != null;
+    }
+
+    // Rule for all other documents within a tenant.
+    // This needs to be separate to avoid being overridden by the more specific rule above.
+    match /tenants/{tenantId}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Rule for the global users collection
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

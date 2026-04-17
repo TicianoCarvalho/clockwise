@@ -1,0 +1,9 @@
+Ocorreu um erro no programa DMP REP.
+Se o problema persistir, por favor, entre em contato
+com a DIMEP pelo telefone + 55 11 3646-4000
+ou fax + 55 11 3646-4071 e informe os seguintes dados:
+
+Versão: 8.02.0003
+Rotina: frmConexaoREP.btnConectar_Click
+Código do erro: 91
+Descrição do erro: Object variable or With block variable not set

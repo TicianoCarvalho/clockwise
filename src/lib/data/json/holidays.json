@@ -1,0 +1,51 @@
+
+[
+  {
+    "id": "20260101",
+    "date": "2026-01-01",
+    "name": "Confraternização Universal",
+    "type": "Nacional"
+  },
+  {
+    "id": "20260421",
+    "date": "2026-04-21",
+    "name": "Tiradentes",
+    "type": "Nacional"
+  },
+  {
+    "id": "20260501",
+    "date": "2026-05-01",
+    "name": "Dia do Trabalho",
+    "type": "Nacional"
+  },
+  {
+    "id": "20260907",
+    "date": "2026-09-07",
+    "name": "Independência do Brasil",
+    "type": "Nacional"
+  },
+  {
+    "id": "20261012",
+    "date": "2026-10-12",
+    "name": "Nossa Senhora Aparecida",
+    "type": "Nacional"
+  },
+  {
+    "id": "20261102",
+    "date": "2026-11-02",
+    "name": "Finados",
+    "type": "Nacional"
+  },
+  {
+    "id": "20261115",
+    "date": "2026-11-15",
+    "name": "Proclamação da República",
+    "type": "Nacional"
+  },
+  {
+    "id": "20261225",
+    "date": "2026-12-25",
+    "name": "Natal",
+    "type": "Nacional"
+  }
+]

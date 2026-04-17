@@ -1,0 +1,140 @@
+[
+  {
+    "id": "1764036396087",
+    "name": "ADM",
+    "workWeek": [
+      {
+        "dayOfWeek": 1,
+        "name": "Segunda-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 2,
+        "name": "Terça-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 3,
+        "name": "Quarta-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 4,
+        "name": "Quinta-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 5,
+        "name": "Sexta-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "17:00"
+      },
+      {
+        "dayOfWeek": 6,
+        "name": "Sábado",
+        "isDayOff": true,
+        "entry1": "",
+        "exit1": "",
+        "entry2": "",
+        "exit2": ""
+      },
+      {
+        "dayOfWeek": 0,
+        "name": "Domingo",
+        "isDayOff": true,
+        "entry1": "",
+        "exit1": "",
+        "entry2": "",
+        "exit2": ""
+      }
+    ]
+  },
+  {
+    "id": "1764037521552",
+    "name": "ADM 2",
+    "workWeek": [
+      {
+        "dayOfWeek": 1,
+        "name": "Segunda-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 2,
+        "name": "Terça-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 3,
+        "name": "Quarta-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 4,
+        "name": "Quinta-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 5,
+        "name": "Sexta-feira",
+        "isDayOff": false,
+        "entry1": "08:00",
+        "exit1": "12:00",
+        "entry2": "13:00",
+        "exit2": "18:00"
+      },
+      {
+        "dayOfWeek": 6,
+        "name": "Sábado",
+        "isDayOff": true,
+        "entry1": "",
+        "exit1": "",
+        "entry2": "",
+        "exit2": ""
+      },
+      {
+        "dayOfWeek": 0,
+        "name": "Domingo",
+        "isDayOff": true,
+        "entry1": "",
+        "exit1": "",
+        "entry2": "",
+        "exit2": ""
+      }
+    ]
+  }
+]

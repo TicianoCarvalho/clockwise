@@ -1,0 +1,222 @@
+{
+  "entities": {
+    "Tenant": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Tenant",
+      "type": "object",
+      "description": "Represents a company tenant in the ClockWise SaaS application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Tenant, typically derived from the company's CNPJ or domain."
+        },
+        "legalName": {
+          "type": "string",
+          "description": "Legal registered name of the company (Razão Social)."
+        },
+        "tradingName": {
+          "type": "string",
+          "description": "The company's commonly known name (Nome Fantasia)."
+        },
+        "cnpj": {
+          "type": "string",
+          "description": "Company's CNPJ (Brazilian national registry)."
+        },
+        "ownerUid": {
+          "type": "string",
+          "description": "The UID of the user who created and owns the tenant."
+        },
+        "ie": {
+          "type": "string",
+          "description": "Inscrição Estadual (State Registration)."
+        },
+        "cei": {
+          "type": "string",
+          "description": "CEI (Cadastro Específico), a number for construction companies, architecture offices, etc."
+        },
+        "city": {
+          "type": "string",
+          "description": "City where the company is located."
+        },
+        "state": {
+          "type": "string",
+          "description": "State (UF) where the company is located."
+        },
+        "plan": {
+          "type": "string",
+          "enum": [
+            "soft",
+            "plus",
+            "prime"
+          ],
+          "description": "The selected subscription plan."
+        },
+        "paymentDay": {
+          "type": "number",
+          "enum": [
+            5,
+            10,
+            15,
+            20,
+            25,
+            30
+          ],
+          "description": "The chosen day of the month for payment."
+        }
+      },
+      "required": [
+        "id",
+        "legalName",
+        "cnpj",
+        "ownerUid",
+        "city",
+        "state",
+        "plan",
+        "paymentDay"
+      ]
+    },
+    "User": {
+      "title": "User",
+      "description": "Represents a user account with access permissions, linked to a specific role.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "master",
+            "admin",
+            "responsavel",
+            "usuario"
+          ]
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "role"
+      ]
+    },
+    "Device": {
+      "title": "Device",
+      "description": "Represents a time clock device (REP-C) for a tenant.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "nickname"
+      ]
+    },
+    "Employee": {
+      "title": "Employee",
+      "type": "object",
+      "description": "Represents an employee of a tenant company.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password"
+    ],
+    "customClaims": {
+      "tenantId": {
+        "type": "string",
+        "description": "The ID of the tenant the user belongs to. Used for data isolation."
+      },
+      "role": {
+        "type": "string",
+        "description": "The user's role, determining their permissions.",
+        "enum": [
+          "master",
+          "admin",
+          "responsavel",
+          "usuario"
+        ]
+      },
+      "cpf": {
+        "type": "string",
+        "description": "The user's CPF, used to link to their employee record if they are a 'usuario'."
+      }
+    }
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/tenants/{tenantId}",
+        "definition": {
+          "entityName": "Tenant",
+          "schema": {
+            "$ref": "#/entities/Tenant"
+          },
+          "description": "Top-level collection for tenant company profiles. The document ID is the tenantId."
+        },
+        "params": [
+          {
+            "name": "tenantId",
+            "description": "Unique identifier for the company/tenant."
+          }
+        ]
+      },
+      {
+        "path": "/tenants/{tenantId}/devices/{deviceId}",
+        "definition": {
+          "entityName": "Device",
+          "description": "Subcollection storing time clock devices for a specific tenant."
+        }
+      },
+      {
+        "path": "/tenants/{tenantId}/employees/{employeeId}",
+        "definition": {
+          "entityName": "Employee",
+          "description": "Subcollection storing employee profiles for a specific tenant."
+        }
+      },
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/entities/User"
+          },
+          "description": "Global collection for user-specific profiles, linking auth UIDs to roles and tenants."
+        }
+      }
+    ]
+  }
+}

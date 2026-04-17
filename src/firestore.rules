@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Helper Functions ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isMaster() {
+      return isAuthenticated() && request.auth.token.role == 'master';
+    }
+    
+    function isMasterByEmail() {
+      // Fallback for hardcoded master emails before custom claims propagate.
+      return isAuthenticated() && 
+        (request.auth.token.email == 'admin@clockwise.com' || request.auth.token.email == 'master@clockwise.com');
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.role == 'admin';
+    }
+    
+    function isMasterOrAdmin() {
+      return isMaster() || isAdmin();
+    }
+    
+    function isMemberOfTenant(tenantId) {
+      return isAuthenticated() && request.auth.token.tenantId == tenantId;
+    }
+    
+    // --- Global Collections (Base Data) ---
+    // Any authenticated user can read these collections. Only Admin/Master can write.
+    match /sectors/{docId=**} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterOrAdmin();
+    }
+    match /roles/{docId=**} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterOrAdmin();
+    }
+    match /schedules/{docId=**} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterOrAdmin();
+    }
+    match /scales/{docId=**} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterOrAdmin();
+    }
+    match /justifications/{docId=**} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterOrAdmin();
+    }
+    match /holidays/{docId=**} {
+      allow read: if isAuthenticated();
+      allow write: if isMasterOrAdmin();
+    }
+    
+    // --- User & Tenant Rules ---
+    match /users/{userId} {
+      allow create: if isOwner(userId);
+      allow read: if isOwner(userId) || isMaster() || isMasterByEmail();
+      allow update: if (isOwner(userId) && !("role" in request.resource.data)) || isMaster() || isMasterByEmail();
+    }
+    
+    match /users {
+      allow list: if isMaster() || isMasterByEmail();
+    }
+
+    match /tenants {
+      allow list: if isMaster() || isMasterByEmail();
+    }
+
+    match /tenants/{tenantId} {
+      allow get: if isMaster() || isMasterByEmail() || isMemberOfTenant(tenantId);
+      allow write: if isMaster() || isMasterByEmail();
+
+      // Wildcard for all other subcollections within a tenant
+      match /{subcollection}/{docId=**} {
+        allow read, write: if isMaster() || isMasterByEmail() || isMemberOfTenant(tenantId);
+      }
+    }
+    
+    // --- COLLECTION GROUP RULES ---
+    // This allows the unauthenticated "First Access" CPF check across all tenants.
+    match /{path=**}/employees/{employeeId} {
+        // Only allow a 'get' operation or a 'list' operation (query) if the client's query is
+        // explicitly limited to a single result. This prevents listing all
+        // employees but allows a secure check for existence.
+        allow get: if true;
+        allow list: if request.query.limit == 1;
+    }
+  }
+}

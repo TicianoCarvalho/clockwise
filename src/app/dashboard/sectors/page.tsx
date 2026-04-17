@@ -1,0 +1,186 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Edit, PlusCircle, Trash2, Loader2, Network } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Dialog } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { SectorForm } from "@/components/SectorForm";
+import { useToast } from "@/hooks/use-toast";
+import type { Sector } from "@/lib/data";
+import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
+import { useAuthContext } from "@/contexts/auth-context";
+import { collection, doc, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
+
+export default function SectorsPage() {
+    const { toast } = useToast();
+    const { firestore } = useFirebase();
+    const { userRole } = useAuthContext();
+
+    const sectorsQuery = useMemoFirebase(() => (firestore && userRole) ? collection(firestore, 'sectors') : null, [firestore, userRole]);
+    const { data: sectors, isLoading: loading } = useCollection<Sector>(sectorsQuery);
+
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [editingSector, setEditingSector] = useState<Sector | null>(null);
+    const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
+    const [deletingSector, setDeletingSector] = useState<Sector | null>(null);
+
+    const handleOpenDialogForEdit = (sector: Sector) => {
+        setEditingSector(sector);
+        setIsDialogOpen(true);
+    };
+    
+    const handleOpenDialogForAdd = () => {
+        setEditingSector(null);
+        setIsDialogOpen(true);
+    };
+
+    const handleSubmitSector = async (data: Omit<Sector, 'id'>) => {
+        if (!firestore) {
+            toast({
+                variant: 'destructive',
+                title: 'Erro de Conexão',
+                description: 'Não foi possível conectar ao banco de dados.',
+            });
+            return;
+        }
+        const isEditing = !!editingSector;
+
+        try {
+            if (isEditing && editingSector?.id) {
+                const docRef = doc(firestore, 'sectors', editingSector.id);
+                await updateDoc(docRef, data);
+            } else {
+                const collectionRef = collection(firestore, 'sectors');
+                await addDoc(collectionRef, data);
+            }
+            toast({ title: `Setor ${isEditing ? 'atualizado' : 'adicionado'}!`, description: `O setor "${data.name}" foi salvo com sucesso.` });
+            setIsDialogOpen(false);
+        } catch (error: any) {
+             toast({ variant: "destructive", title: "Erro", description: "Não foi possível salvar o setor." });
+        }
+    };
+
+    const handleOpenConfirmDeleteDialog = (sector: Sector) => {
+        setDeletingSector(sector);
+        setIsConfirmDeleteDialogOpen(true);
+    };
+
+    const handleDeleteSectorConfirm = async () => {
+        if (!deletingSector || !firestore) return;
+        try {
+            const docRef = doc(firestore, 'sectors', deletingSector.id);
+            await deleteDoc(docRef);
+            toast({ title: "Setor removido!", description: `O setor "${deletingSector.name}" foi removido com sucesso.` });
+        } catch (error: any) {
+             toast({ variant: "destructive", title: "Erro", description: "Não foi possível remover o setor." });
+        }
+        setIsConfirmDeleteDialogOpen(false);
+        setDeletingSector(null);
+    };
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2"><Network /> Gerenciamento de Setores</CardTitle>
+            <CardDescription>Adicione, edite e gerencie os setores da sua empresa.</CardDescription>
+          </div>
+          <Button onClick={handleOpenDialogForAdd}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Adicionar Setor
+          </Button>
+        </CardHeader>
+        <CardContent>
+            {loading ? (
+                 <div className="flex items-center justify-center h-40">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+            ) : (
+                <Table>
+                    <TableHeader>
+                    <TableRow>
+                        <TableHead>Setor</TableHead>
+                        <TableHead>Descrição</TableHead>
+                        <TableHead className="text-right w-[100px]">Ações</TableHead>
+                    </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {!sectors || sectors.length === 0 ? (
+                         <TableRow>
+                            <TableCell colSpan={3} className="h-24 text-center">
+                                Nenhum setor cadastrado.
+                            </TableCell>
+                        </TableRow>
+                    ) : (
+                        sectors.map((sector) => (
+                        <TableRow key={sector.id}>
+                            <TableCell className="font-medium">{sector.name}</TableCell>
+                            <TableCell>{sector.description}</TableCell>
+                            <TableCell className="text-right">
+                                <Button variant="ghost" size="icon" onClick={() => handleOpenDialogForEdit(sector)}>
+                                    <Edit className="h-4 w-4" />
+                                    <span className="sr-only">Editar</span>
+                                </Button>
+                                <Button variant="ghost" size="icon" className="hover:text-destructive" onClick={() => handleOpenConfirmDeleteDialog(sector)}>
+                                    <Trash2 className="h-4 w-4" />
+                                    <span className="sr-only">Remover</span>
+                                </Button>
+                            </TableCell>
+                        </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                </Table>
+            )}
+        </CardContent>
+      </Card>
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <SectorForm 
+            sector={editingSector}
+            onSubmit={handleSubmitSector}
+        />
+      </Dialog>
+      <AlertDialog open={isConfirmDeleteDialogOpen} onOpenChange={setIsConfirmDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Essa ação não pode ser desfeita. Isso removerá permanentemente o setor
+              &quot;{deletingSector?.name}&quot; dos seus registros.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSectorConfirm}>Continuar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

@@ -1,0 +1,202 @@
+[
+  {
+    "employeeId": "1",
+    "type": "Entrada",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "Laboratorio",
+    "timestamp": "2026-01-16 01:21:43"
+  },
+  {
+    "employeeId": "1",
+    "type": "SaidaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "Laboratorio",
+    "timestamp": "2026-01-16 13:46:43"
+  },
+  {
+    "employeeId": "1",
+    "type": "EntradaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "Laboratorio",
+    "timestamp": "2026-01-16 14:44:32",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.8188390091978857,
+    "actualLongitude": -38.470788113936685
+  },
+  {
+    "employeeId": "1",
+    "type": "Saída",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-16 15:21:31",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.818844318359405,
+    "actualLongitude": -38.47091287721238
+  },
+  {
+    "employeeId": "1",
+    "type": "Entrada",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-17 11:07:48",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.8188347276532992,
+    "actualLongitude": -38.470883486673564
+  },
+  {
+    "employeeId": "1",
+    "type": "SaidaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-17 11:17:57",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.8188393116695876,
+    "actualLongitude": -38.47086587358278
+  },
+  {
+    "employeeId": "1",
+    "type": "EntradaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-17 18:38:49",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.818835339515771,
+    "actualLongitude": -38.47080283851621
+  },
+  {
+    "employeeId": "1",
+    "type": "Entrada",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-19 00:57:09",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.818837099339604,
+    "actualLongitude": -38.47081913328299
+  },
+  {
+    "employeeId": "1",
+    "type": "SaidaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-19 01:13:44",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.8188404744211315,
+    "actualLongitude": -38.47086886845438
+  },
+  {
+    "employeeId": "1",
+    "type": "Entrada",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-20 00:33:26",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.818833329238033,
+    "actualLongitude": -38.470849943091565
+  },
+  {
+    "employeeId": "1",
+    "type": "SaidaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-20 12:00:09",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.8188367096316327,
+    "actualLongitude": -38.470868038682625
+  },
+  {
+    "employeeId": "1",
+    "type": "Entrada",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-21 00:19:37",
+    "isLocationAnomaly": false
+  },
+  {
+    "employeeId": "1",
+    "type": "SaidaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-21 14:18:50",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.8188434285804758,
+    "actualLongitude": -38.470888223039715
+  },
+  {
+    "employeeId": "1",
+    "type": "EntradaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-21 14:54:20",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.81885288685993,
+    "actualLongitude": -38.47085083318842
+  },
+  {
+    "employeeId": "1",
+    "type": "Entrada",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-28 21:44:41",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.8188286120285038,
+    "actualLongitude": -38.47085310206501
+  },
+  {
+    "employeeId": "1",
+    "type": "SaidaAlmoco",
+    "location": {
+      "latitude": 0,
+      "longitude": 0
+    },
+    "locationName": "FABRICA FORTALEZA",
+    "timestamp": "2026-01-28 23:37:03",
+    "isLocationAnomaly": true,
+    "actualLatitude": -3.8188287198115574,
+    "actualLongitude": -38.47085669890502
+  }
+]
