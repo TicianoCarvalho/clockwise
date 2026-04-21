@@ -19,18 +19,24 @@ function Calendar({
     <DayPicker
       showOutsideDays={showOutsideDays}
       className={cn("p-3", className)}
+      // --- CONFIGURAÇÃO DO SELETOR DE ANO ---
+      captionLayout="dropdown-buttons"
+      fromYear={1960}
+      toYear={2040}
+      // ---------------------------------------
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
-        caption: "flex justify-between pt-1 items-center",
-        caption_label: "text-sm font-medium",
+        caption: "flex justify-center pt-1 relative items-center gap-1", // Ajustado para os dropdowns
+        caption_label: "hidden", // Escondemos o label fixo quando usamos dropdowns
+        caption_dropdowns: "flex justify-center gap-1", // Alinha os menus de Mês e Ano
         nav: "space-x-1 flex items-center",
         nav_button: cn(
           buttonVariants({ variant: "outline" }),
           "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
         ),
-        nav_button_previous: "",
-        nav_button_next: "",
+        nav_button_previous: "absolute left-1",
+        nav_button_next: "absolute right-1",
         table: "w-full border-collapse space-y-1",
         head_row: "flex",
         head_cell:
@@ -51,6 +57,11 @@ function Calendar({
         day_range_middle:
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         day_hidden: "invisible",
+        // Estilização básica dos dropdowns (importante)
+        vhidden: "hidden",
+        dropdown: "rdp-dropdown bg-background border rounded-md p-1 text-sm font-medium focus:outline-none",
+        dropdown_month: "rdp-dropdown_month",
+        dropdown_year: "rdp-dropdown_year",
         ...classNames,
       }}
       components={{
