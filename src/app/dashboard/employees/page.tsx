@@ -75,11 +75,23 @@ export default function EmployeesPage() {
   const { data: employeesData, isLoading: employeesLoading, error: employeesError } = useCollection<Employee>(employeesQuery);
   const employees = useMemo(() => employeesData || [], [employeesData]);
 
+  // --- Lógica de Controle de Vagas ---
+  const activeEmployeesCount = useMemo(() => {
+    return employees.filter(emp => {
+      if (!emp.terminationDate) return true;
+      // Considera ativo se a data de rescisão for futura
+      return new Date(emp.terminationDate) > new Date();
+    }).length;
+  }, [employees]);
+
+  const planLimit = 20; // Pode ser substituído por t.planLimit vindo do tenant
+  const isLimitReached = activeEmployeesCount >= planLimit;
+  // -----------------------------------
+
   const locationsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, [firestore, finalTenantId]);
   const { data: locationsData } = useCollection<Location>(locationsQuery);
   const locations = useMemo(() => locationsData || [], [locationsData]);
   
-  // Fetch global collections, ensuring user is authenticated
   const sectorsQuery = useMemoFirebase(() => (firestore && userRole) ? collection(firestore, 'sectors') : null, [firestore, userRole]);
   const { data: sectorsData } = useCollection<Sector>(sectorsQuery);
   const sectors = useMemo(() => sectorsData || [], [sectorsData]);
@@ -101,8 +113,6 @@ export default function EmployeesPage() {
     }
   }, [employeesError]);
 
-  // --- End of Data Fetching Refactor ---
-
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
@@ -123,21 +133,41 @@ export default function EmployeesPage() {
 
     const isEditing = !!editingEmployee;
     
+    // Verificação de Limite de Vagas (Apenas para novos cadastros)
+    if (!isEditing && isLimitReached) {
+      toast({ 
+        variant: "destructive", 
+        title: "Limite atingido", 
+        description: `O plano desta empresa permite apenas ${planLimit} colaboradores ativos.` 
+      });
+      return;
+    }
+
     // Determine status based on termination date
     const terminationDate = (data as any).terminationDate;
     const newStatus = (terminationDate && new Date(terminationDate) < new Date()) ? 'Inativo' : 'Ativo';
     
-    // CPF now comes pre-formatted and is used as the document ID.
     const employeeData = { ...data, status: newStatus };
 
     try {
       if (isEditing && editingEmployee?.id) {
-          // On update, the ID is the CPF from the original document.
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', editingEmployee.id);
           await updateDoc(docRef, employeeData);
       } else {
-          // On create, use the formatted CPF as the document ID with setDoc.
+          // Verificação de Duplicidade por CPF (ID Único)
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', employeeData.cpf);
+          
+          // Verifica no estado local se o CPF já existe para evitar sobrescrita indesejada
+          const existingEmp = employees.find(e => e.cpf === employeeData.cpf);
+          if (existingEmp) {
+            toast({ 
+              variant: "destructive", 
+              title: "CPF já cadastrado", 
+              description: `O CPF ${employeeData.cpf} já pertence a ${existingEmp.name}.` 
+            });
+            return;
+          }
+
           await setDoc(docRef, employeeData);
       }
       
@@ -191,7 +221,7 @@ export default function EmployeesPage() {
 
   const handleItemsPerPageChange = (value: string) => {
     setItemsPerPage(Number(value));
-    setCurrentPage(1); // Reset to first page
+    setCurrentPage(1);
   };
 
   const goToPreviousPage = () => {
@@ -229,7 +259,7 @@ export default function EmployeesPage() {
             <Card className="mb-6">
             <CardHeader>
                 <CardTitle>Seleção de Empresa (Master)</CardTitle>
-                <CardDescription>Como administrador Master, selecione a empresa que deseja gerenciar.</CardDescription>
+                <CardDescription>Gerencie os dados da empresa selecionada.</CardDescription>
             </CardHeader>
             <CardContent>
                 {tenantsLoading ? (
@@ -321,7 +351,7 @@ export default function EmployeesPage() {
 
         <footer className="flex items-center justify-between py-4 mt-auto border-t">
             <div className="text-sm text-muted-foreground">
-                Total de {employees.length} funcionários.
+                Total de {employees.length} funcionários ({activeEmployeesCount} ativos / limite {planLimit}).
             </div>
             <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
@@ -350,7 +380,6 @@ export default function EmployeesPage() {
                         disabled={currentPage === 1}
                     >
                         <ChevronLeft className="h-4 w-4" />
-                        <span className="sr-only">Página anterior</span>
                     </Button>
                     <Button
                         variant="outline"
@@ -360,7 +389,6 @@ export default function EmployeesPage() {
                         disabled={currentPage === totalPages || totalPages === 0}
                     >
                         <ChevronRight className="h-4 w-4" />
-                        <span className="sr-only">Próxima página</span>
                     </Button>
                 </div>
             </div>
@@ -375,20 +403,23 @@ export default function EmployeesPage() {
             sectors={sectors || []}
             schedules={schedules || []}
             scales={scales || []}
+            isLimitReached={isLimitReached}
         />
       </Dialog>
+      
        <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
           <EmployeeImportDialog 
               onImport={handleBulkImport}
               onClose={() => setIsImportDialogOpen(false)}
           />
       </Dialog>
+      
       <AlertDialog open={isConfirmDeleteDialogOpen} onOpenChange={setIsConfirmDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
             <AlertDialogDescription>
-              A exclusão de funcionários foi permanentemente desativada para garantir a integridade dos dados. Você pode inativar um funcionário editando seu cadastro.
+              A exclusão de funcionários foi permanentemente desativada. Use a edição para inativar um funcionário.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -400,5 +431,3 @@ export default function EmployeesPage() {
     </>
   );
 }
-
-    
