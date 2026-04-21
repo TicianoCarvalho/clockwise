@@ -45,19 +45,24 @@ import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
 import { collection, doc, addDoc, updateDoc, deleteDoc, query } from "firebase/firestore";
 
+// Interface estendida para garantir que o TS aceite os novos campos fiscais
+interface ExtendedLocation extends Location {
+    cnpj?: string;
+    razaoSocial?: string;
+    inscricaoEstadual?: string;
+}
+
 export default function LocationsSettingsPage() {
     const { toast } = useToast();
     const { firestore } = useFirebase();
     const { userRole, tenantId: authTenantId } = useAuthContext();
     const [error, setError] = useState<string | null>(null);
 
-    // For master user, fetch tenants to select from
     const masterTenantsQuery = useMemoFirebase(() => 
         (firestore && userRole === 'master') ? query(collection(firestore, 'tenants')) : null, 
     [firestore, userRole]);
     const { data: tenants, isLoading: tenantsLoading } = useCollection<Company>(masterTenantsQuery);
     
-    // For master user, manage selected tenant
     const [selectedTenantId, setSelectedTenantId] = useState<string>('');
     useEffect(() => {
         if (userRole === 'master' && tenants && tenants.length > 0 && !selectedTenantId) {
@@ -65,12 +70,10 @@ export default function LocationsSettingsPage() {
         }
     }, [userRole, tenants, selectedTenantId]);
 
-    // Final tenantId to use for fetching locations
     const finalTenantId = userRole === 'master' ? selectedTenantId : authTenantId;
 
-    // Fetch locations for the determined tenant
     const locationsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, [firestore, finalTenantId]);
-    const { data: locations, isLoading: locationsLoading, error: locationsError } = useCollection<Location>(locationsQuery);
+    const { data: locations, isLoading: locationsLoading, error: locationsError } = useCollection<ExtendedLocation>(locationsQuery);
 
     const isLoading = locationsLoading || (userRole === 'master' && tenantsLoading);
 
@@ -82,11 +85,11 @@ export default function LocationsSettingsPage() {
     }, [locationsError]);
     
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [editingLocation, setEditingLocation] = useState<Location | null>(null);
+    const [editingLocation, setEditingLocation] = useState<ExtendedLocation | null>(null);
     const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
-    const [deletingLocation, setDeletingLocation] = useState<Location | null>(null);
+    const [deletingLocation, setDeletingLocation] = useState<ExtendedLocation | null>(null);
 
-    const handleOpenDialogForEdit = (location: Location) => {
+    const handleOpenDialogForEdit = (location: ExtendedLocation) => {
         setEditingLocation(location);
         setIsDialogOpen(true);
     };
@@ -100,7 +103,7 @@ export default function LocationsSettingsPage() {
         setIsDialogOpen(true);
     };
 
-    const handleSubmitLocation = async (data: Location) => {
+    const handleSubmitLocation = async (data: any) => { // Alterado para any para aceitar os campos do form
         if (!firestore || !finalTenantId) {
             toast({
                 variant: 'destructive',
@@ -113,13 +116,19 @@ export default function LocationsSettingsPage() {
         const isEditing = !!editingLocation;
 
         try {
+            // A localização continua funcionando via Geocode
             const { latitude, longitude } = await retryWithBackoff(() => geocodeAddress({ address: data.address }));
 
+            // Objeto agora contempla os dados fiscais solicitados
             const locationData = {
                 name: data.name,
                 address: data.address,
+                cnpj: data.cnpj || "",               // NOVO: CNPJ
+                razaoSocial: data.razaoSocial || "", // NOVO: Razão Social
+                inscricaoEstadual: data.inscricaoEstadual || "", // NOVO: IE
                 latitude,
-                longitude
+                longitude,
+                updatedAt: new Date().toISOString()
             };
 
             if (isEditing && editingLocation?.id) {
@@ -127,16 +136,17 @@ export default function LocationsSettingsPage() {
                 await updateDoc(docRef, locationData);
             } else {
                 const collectionRef = collection(firestore, 'tenants', finalTenantId, 'locations');
-                await addDoc(collectionRef, locationData);
+                await addDoc(collectionRef, { ...locationData, createdAt: new Date().toISOString() });
             }
-            toast({ title: `Local ${isEditing ? 'atualizado' : 'adicionado'}!`, description: `O local "${data.name}" foi salvo com sucesso.` });
+            
+            toast({ title: `Filial ${isEditing ? 'atualizada' : 'adicionada'}!`, description: `A unidade "${data.razaoSocial || data.name}" foi salva com sucesso.` });
             setIsDialogOpen(false);
         } catch (error: any) {
-             toast({ variant: "destructive", title: "Erro ao salvar local", description: error.message });
+             toast({ variant: "destructive", title: "Erro ao salvar", description: error.message });
         }
     };
 
-    const handleOpenConfirmDeleteDialog = (location: Location) => {
+    const handleOpenConfirmDeleteDialog = (location: ExtendedLocation) => {
         setDeletingLocation(location);
         setIsConfirmDeleteDialogOpen(true);
     };
@@ -145,9 +155,9 @@ export default function LocationsSettingsPage() {
         if (!deletingLocation || !firestore || !finalTenantId) return;
         try {
             await deleteDoc(doc(firestore, 'tenants', finalTenantId, 'locations', deletingLocation.id));
-            toast({ title: "Local removido!", description: `O local "${deletingLocation.name}" foi removido com sucesso.` });
+            toast({ title: "Removido!", description: "Os dados foram removidos com sucesso." });
         } catch (error: any) {
-             toast({ variant: "destructive", title: "Erro", description: "Não foi possível remover o local." });
+             toast({ variant: "destructive", title: "Erro", description: "Não foi possível remover." });
         }
         setIsConfirmDeleteDialogOpen(false);
         setDeletingLocation(null);
@@ -182,12 +192,12 @@ export default function LocationsSettingsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2"><MapPin /> Gerenciamento de Filiais (Locais)</CardTitle>
-            <CardDescription>Cadastre e gerencie as filiais e locais de trabalho.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><MapPin /> Gerenciamento de Filiais e Locais</CardTitle>
+            <CardDescription>Configure os dados fiscais e a geolocalização das unidades.</CardDescription>
           </div>
           <Button onClick={handleOpenDialogForAdd} disabled={!finalTenantId}>
             <PlusCircle className="mr-2 h-4 w-4" />
-            Adicionar Filial/Local
+            Adicionar Unidade
           </Button>
         </CardHeader>
         <CardContent>
@@ -203,9 +213,9 @@ export default function LocationsSettingsPage() {
             <Table>
                 <TableHeader>
                 <TableRow>
-                    <TableHead>Nome da Filial/Local</TableHead>
-                    <TableHead>Endereço</TableHead>
-                    <TableHead className="hidden md:table-cell">Mapa</TableHead>
+                    <TableHead>Razão Social / Nome</TableHead>
+                    <TableHead>CNPJ</TableHead>
+                    <TableHead className="hidden md:table-cell">Endereço</TableHead>
                     <TableHead className="text-right w-[100px]">Ações</TableHead>
                 </TableRow>
                 </TableHeader>
@@ -213,37 +223,28 @@ export default function LocationsSettingsPage() {
                 {!locations || locations.length === 0 ? (
                     <TableRow>
                         <TableCell colSpan={4} className="h-24 text-center">
-                            Nenhum local cadastrado para esta empresa.
+                            Nenhuma unidade cadastrada.
                         </TableCell>
                     </TableRow>
                 ) : (
                     locations.map((location) => (
                     <TableRow key={location.id}>
-                        <TableCell className="font-medium">{location.name}</TableCell>
-                        <TableCell>{location.address}</TableCell>
-                        <TableCell className="hidden md:table-cell">
-                            {location.address !== 'Remoto' ? (
-                                <a 
-                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.address)}`} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary hover:underline"
-                                >
-                                    <MapPin className="h-4 w-4" />
-                                    <span>Ver no mapa</span>
-                                </a>
-                            ) : (
-                                <span className="text-sm text-muted-foreground">N/A</span>
-                            )}
+                        <TableCell className="font-medium">
+                            <div className="flex flex-col">
+                                <span>{location.razaoSocial || location.name}</span>
+                                <span className="text-xs text-muted-foreground">{location.name}</span>
+                            </div>
+                        </TableCell>
+                        <TableCell>{location.cnpj || "Não informado"}</TableCell>
+                        <TableCell className="hidden md:table-cell text-sm italic">
+                            {location.address}
                         </TableCell>
                         <TableCell className="text-right">
                             <Button variant="ghost" size="icon" onClick={() => handleOpenDialogForEdit(location)}>
                                 <Edit className="h-4 w-4" />
-                                <span className="sr-only">Editar</span>
                             </Button>
                             <Button variant="ghost" size="icon" className="hover:text-destructive" onClick={() => handleOpenConfirmDeleteDialog(location)}>
                                 <Trash2 className="h-4 w-4" />
-                                <span className="sr-only">Remover</span>
                             </Button>
                         </TableCell>
                     </TableRow>
@@ -254,6 +255,7 @@ export default function LocationsSettingsPage() {
           )}
         </CardContent>
       </Card>
+
       <Dialog open={isDialogOpen} onOpenChange={(isOpen) => {
           setIsDialogOpen(isOpen);
           if (!isOpen) setEditingLocation(null);
@@ -263,18 +265,18 @@ export default function LocationsSettingsPage() {
             onSubmit={handleSubmitLocation}
         />
       </Dialog>
+
       <AlertDialog open={isConfirmDeleteDialogOpen} onOpenChange={setIsConfirmDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir Unidade?</AlertDialogTitle>
             <AlertDialogDescription>
-              Essa ação não pode ser desfeita. Isso removerá permanentemente a filial/local
-              &quot;{deletingLocation?.name}&quot; dos seus registros.
+              Isso removerá a filial "{deletingLocation?.razaoSocial || deletingLocation?.name}" permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteLocationConfirm}>Continuar</AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteLocationConfirm}>Confirmar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

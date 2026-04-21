@@ -10,15 +10,15 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { type Employee } from '@/lib/data';
 import { initializeFirebase } from '@/firebase';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { collectionGroup, query, where, getDocs, limit, getDoc } from 'firebase/firestore';
 
-// 1. Criamos um componente interno para a lógica que usa searchParams
 function RegistroPontoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { firestore } = initializeFirebase();
   
   const [employee, setEmployee] = useState<Employee | null>(null);
+  const [tenantName, setTenantName] = useState<string>("Carregando...");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,31 +43,49 @@ function RegistroPontoContent() {
       setLoading(true);
       setError(null);
       try {
-        const tenantId = "43058506000164"; // Tenant fixo Aleph IT
-        const employeesRef = collection(firestore, 'tenants', tenantId, 'employees');
-        
+        // --- BUSCA GLOBAL (Collection Group) ---
+        // Isso ignora o tenantId fixo e procura em todas as coleções 'employees'
+        const employeesGroup = collectionGroup(firestore, 'employees');
         const formattedCpf = cleanedCpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-        const q = query(employeesRef, where("cpf", "==", formattedCpf), limit(1));
         
+        const q = query(employeesGroup, where("cpf", "==", formattedCpf), limit(1));
         const querySnapshot = await getDocs(q);
 
         if (querySnapshot.empty) {
-          setError("Colaborador não encontrado na base da Aleph IT.");
+          setError("Colaborador não encontrado em nenhuma unidade do sistema.");
           return;
         }
 
         const employeeDoc = querySnapshot.docs[0];
-        const foundEmployee = { ...employeeDoc.data(), id: employeeDoc.id } as Employee;
+        const employeeData = employeeDoc.data();
+        
+        // Descobre o tenantId dinamicamente através da hierarquia do documento encontrado
+        const tenantRef = employeeDoc.ref.parent.parent;
+        
+        if (tenantRef) {
+          // Busca o nome da empresa para exibir no cabeçalho
+          const tenantSnap = await getDoc(tenantRef);
+          if (tenantSnap.exists()) {
+            setTenantName(tenantSnap.data().name || "Empresa Identificada");
+          }
+        }
+
+        const foundEmployee = { 
+          ...employeeData, 
+          id: employeeDoc.id,
+          tenantId: tenantRef?.id // Importante para o registro do ponto saber onde salvar
+        } as Employee;
         
         if (foundEmployee.allowMobilePunch === false) {
-          setError("Acesso via celular não autorizado.");
+          setError("Acesso via celular não autorizado para este perfil.");
           return;
         }
 
         setEmployee(foundEmployee);
       } catch (err: any) {
         console.error("Erro Firestore:", err);
-        setError("Erro ao conectar com o banco de dados.");
+        // Se der erro de índice, o link aparecerá no console do navegador (F12)
+        setError("Erro ao conectar com o banco de dados. Verifique o console.");
       } finally {
         setLoading(false);
       }
@@ -84,36 +102,41 @@ function RegistroPontoContent() {
 
   if (error) return (
     <Card className="w-full max-w-sm text-center border-none shadow-none">
-      <CardHeader><CardTitle className="text-destructive">Acesso Negado</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle className="text-destructive">Acesso Negado</CardTitle>
+      </CardHeader>
       <CardContent>
-        <p className="mb-4">{error}</p>
-        <Button onClick={() => router.push('/ponto/login')}>Voltar</Button>
+        <p className="mb-4 text-sm text-muted-foreground">{error}</p>
+        <Button className="w-full" onClick={() => router.push('/ponto/login')}>Voltar para Login</Button>
       </CardContent>
     </Card>
   );
 
-  return <IdentifyAndClockInContent initialEmployee={employee!} isPontoMode={true} />;
+  return (
+    <>
+      <CardHeader className="text-center">
+        <CardTitle>Ponto Biométrico</CardTitle>
+        <CardDescription>Unidade: {tenantName}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <IdentifyAndClockInContent initialEmployee={employee!} isPontoMode={true} />
+      </CardContent>
+    </>
+  );
 }
 
-// 2. O componente principal apenas envolve tudo em Suspense
 export default function RegistroPontoPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-[380px]">
-        <CardHeader className="text-center">
-          <CardTitle>Ponto Biométrico</CardTitle>
-          <CardDescription>Empresa: Aleph IT</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {/* O Suspense DEVE envolver qualquer componente que use useSearchParams */}
-          <Suspense fallback={
-            <div className="flex justify-center p-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          }>
-            <RegistroPontoContent />
-          </Suspense>
-        </CardContent>
+      <Card className="w-full max-w-[380px] overflow-hidden">
+        <Suspense fallback={
+          <div className="flex flex-col items-center justify-center p-12 space-y-4">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Validando acesso...</p>
+          </div>
+        }>
+          <RegistroPontoContent />
+        </Suspense>
       </Card>
     </main>
   );

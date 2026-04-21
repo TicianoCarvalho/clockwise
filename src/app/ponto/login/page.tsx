@@ -24,7 +24,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Clock, Loader2, ArrowLeft, User, AlertCircle } from "lucide-react";
+import { Loader2, ArrowLeft, User, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -38,17 +38,16 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useFirebase } from "@/firebase";
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
-import { collection, query, where, limit, getDocs } from "firebase/firestore";
+import { collectionGroup, query, where, limit, getDocs, updateDoc } from "firebase/firestore";
 
-// Main login form schema
+// Schema do formulário de login
 const loginFormSchema = z.object({
   cpf: z.string().min(14, "CPF deve ter 11 dígitos.").max(14, "Formato de CPF inválido."),
   password: z.string().min(1, "A senha é obrigatória."),
 });
 type LoginFormValues = z.infer<typeof loginFormSchema>;
 
-// First access modal schema
+// Schema do primeiro acesso
 const firstAccessSchema = z.object({
     newPassword: z.string().min(6, "A senha deve ter no mínimo 6 caracteres."),
     confirmPassword: z.string(),
@@ -66,7 +65,7 @@ export default function ColaboradorLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [showFirstAccessModal, setShowFirstAccessModal] = useState(false);
   const [cpfForFirstAccess, setCpfForFirstAccess] = useState("");
-  const { auth, firestore } = useFirebase();
+  const { firestore } = useFirebase(); // Removido o 'auth' pois não usaremos para colaboradores
 
   const loginForm = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
@@ -90,81 +89,77 @@ export default function ColaboradorLoginPage() {
     return onlyDigits;
   };
   
+  // --- LOGIN VIA FIRESTORE (SEM ERRO 400) ---
   const handleLogin: SubmitHandler<LoginFormValues> = async (data) => {
     setLoading(true);
     setError(null);
-    if (!auth) {
-        setError("Serviço de autenticação indisponível.");
+    if (!firestore) {
+        setError("Serviço de banco de dados indisponível.");
         setLoading(false);
         return;
     }
 
-    const cleanedCpf = data.cpf.replace(/\D/g, '');
-    const maskedEmail = `${cleanedCpf}@ponto.clockwise`;
-
     try {
-        await signInWithEmailAndPassword(auth, maskedEmail, data.password);
-        router.push(`/ponto/registro?cpf=${data.cpf}`);
-    } catch (err: any) {
-        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-            setError("CPF não cadastrado ou primeiro acesso não realizado.");
-        } else if (err.code === 'auth/wrong-password') {
-            setError("Senha incorreta.");
-        } else {
-            console.error("Login Error:", err);
-            setError("Erro de conexão. Tente novamente.");
+        // Busca global em todas as empresas pelo CPF formatado
+        const employeesGroup = collectionGroup(firestore, 'employees');
+        const q = query(employeesGroup, where("cpf", "==", data.cpf), limit(1));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            setError("CPF não cadastrado ou empresa não encontrada.");
+            return;
         }
+
+        const employeeDoc = querySnapshot.docs[0];
+        const employeeData = employeeDoc.data();
+
+        // Verifica se a senha bate (comparando com o campo salvo no Firestore)
+        if (employeeData.password === data.password) {
+            toast({ title: "Login realizado!", description: "Acessando área de ponto..." });
+            router.push(`/ponto/registro?cpf=${data.cpf}`);
+        } else {
+            setError("Senha incorreta. Se for seu primeiro acesso, clique no botão abaixo.");
+        }
+
+    } catch (err: any) {
+        console.error("Login Error:", err);
+        setError("Erro ao validar acesso. Verifique sua conexão.");
     } finally {
         setLoading(false);
     }
   };
 
-  const checkCpfExists = async (cpf: string): Promise<boolean> => {
-    if (!firestore) return false;
-  
-    const tenantId = "43058506000164"; 
-    const employeesRef = collection(firestore, 'tenants', tenantId, 'employees');
-    
-    const q = query(employeesRef, where("cpf", "==", cpf), limit(1));
-    
-    try {
-        const querySnapshot = await getDocs(q);
-        return !querySnapshot.empty;
-    } catch (e) {
-        console.error("Error checking CPF existence:", e);
-        toast({ 
-            variant: 'destructive', 
-            title: 'Erro de Permissão', 
-            description: 'Acesse o Console do Firebase e publique as regras de listagem.' 
-        });
-        return false;
-    }
+  // --- BUSCA GLOBAL PARA PRIMEIRO ACESSO ---
+  const checkCpfExistsGlobal = async (cpf: string) => {
+    if (!firestore) return null;
+    const employeesGroup = collectionGroup(firestore, 'employees');
+    const q = query(employeesGroup, where("cpf", "==", cpf), limit(1));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.empty ? null : querySnapshot.docs[0];
   };
 
 
   const handleFirstAccess: SubmitHandler<FirstAccessFormValues> = async (data) => {
       setLoading(true);
-      setError(null);
-      if (!auth) {
-        firstAccessForm.setError("root", { message: "Serviço de autenticação indisponível." });
-        setLoading(false);
-        return;
-      }
-
-      const cleanedCpf = cpfForFirstAccess.replace(/\D/g, '');
-      const maskedEmail = `${cleanedCpf}@ponto.clockwise`;
+      if (!firestore) return;
       
       try {
-          await createUserWithEmailAndPassword(auth, maskedEmail, data.newPassword);
-          toast({ title: "Senha criada com sucesso!", description: "Você será redirecionado para o registro de ponto." });
-          router.push(`/ponto/registro?cpf=${cpfForFirstAccess}`);
-      } catch (err: any) {
-          if (err.code === 'auth/email-already-in-use') {
-              firstAccessForm.setError("root", { message: "Uma senha já foi criada para este CPF. Use a tela de login." });
-          } else {
-              console.error("First Access Error:", err);
-              firstAccessForm.setError("root", { message: "Não foi possível criar a senha. Tente novamente." });
+          const docSnap = await checkCpfExistsGlobal(cpfForFirstAccess);
+          
+          if (docSnap) {
+              // Grava a senha diretamente no documento do colaborador
+              await updateDoc(docSnap.ref, {
+                  password: data.newPassword,
+                  updatedAt: new Date().toISOString()
+              });
+
+              toast({ title: "Senha criada!", description: "Agora você já pode registrar seu ponto." });
+              setShowFirstAccessModal(false);
+              router.push(`/ponto/registro?cpf=${cpfForFirstAccess}`);
           }
+      } catch (err: any) {
+          console.error("First Access Error:", err);
+          firstAccessForm.setError("root", { message: "Erro ao salvar senha. Tente novamente." });
       } finally {
           setLoading(false);
       }
@@ -173,46 +168,38 @@ export default function ColaboradorLoginPage() {
   const handleOpenFirstAccessModal = async () => {
         const cpf = loginForm.getValues("cpf");
         if (!cpf || cpf.replace(/\D/g, '').length !== 11) {
-            toast({ variant: 'destructive', title: 'CPF Inválido', description: 'Por favor, digite um CPF válido com 11 dígitos.'});
+            toast({ variant: 'destructive', title: 'CPF Inválido', description: 'Digite o CPF completo antes de prosseguir.'});
             return;
         }
         setLoading(true);
-        setError(null);
-        const exists = await checkCpfExists(cpf);
+        const employeeDoc = await checkCpfExistsGlobal(cpf);
         setLoading(false);
         
-        if (exists) {
+        if (employeeDoc) {
             setCpfForFirstAccess(cpf);
             setShowFirstAccessModal(true);
         } else {
-            setError("CPF não cadastrado pelo administrador. Verifique o número digitado ou contate o RH.");
+            setError("CPF não localizado. Verifique com seu RH.");
         }
   };
   
   const handleForgotPassword = () => {
     toast({
         title: "Recuperação de Senha",
-        description: "Por favor, contate o seu administrador ou o RH para resetar sua senha.",
-        duration: 6000,
+        description: "Por favor, contate o RH da sua empresa para resetar sua senha.",
     });
   }
 
   return (
     <>
     <main className="flex min-h-screen w-full flex-col items-center justify-center bg-background p-4">
-      <Button asChild variant="ghost" className="absolute left-4 top-4">
-        <Link href="/">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Voltar para Home
-        </Link>
-      </Button>
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
             <div className="flex items-center justify-center gap-2 mb-4 text-primary">
                 <User className="h-8 w-8" />
             </div>
           <CardTitle className="text-2xl">👤 Área do Colaborador</CardTitle>
-           <CardDescription>Registro de Ponto</CardDescription>
+           <CardDescription>Registro de Ponto Biométrico</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...loginForm}>
@@ -243,7 +230,7 @@ export default function ColaboradorLoginPage() {
                         </Button>
                     </div>
                     <FormControl>
-                      <Input type="password" placeholder="Mínimo 6 caracteres" {...field} />
+                      <Input type="password" placeholder="Sua senha cadastrada" {...field} />
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -252,22 +239,20 @@ export default function ColaboradorLoginPage() {
               {error && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Erro de Acesso</AlertTitle>
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
 
               <Button type="submit" className="w-full h-12 text-lg" disabled={loading}>
-                {loading && loginForm.formState.isSubmitting ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : "👆 Entrar e Registrar Ponto"}
+                {loading ? <Loader2 className="mr-2 h-6 w-6 animate-spin" /> : "👆 Entrar para Bater Ponto"}
               </Button>
             </form>
           </Form>
         </CardContent>
         <CardFooter className="flex flex-col items-center gap-2 text-sm border-t pt-6">
-            <p className="font-semibold text-muted-foreground">👤 PRIMEIRO ACESSO?</p>
-            <p className="text-xs text-muted-foreground text-center">Seu CPF já deve estar cadastrado pelo administrador.</p>
-            <Button variant="link" className="p-0 h-auto" onClick={handleOpenFirstAccessModal} disabled={loading}>
-                {loading && !loginForm.formState.isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : "Cadastrar 1º Acesso"}
+            <p className="font-semibold text-muted-foreground uppercase text-xs">Ainda não tem senha?</p>
+            <Button variant="outline" className="w-full" onClick={handleOpenFirstAccessModal} disabled={loading}>
+                 Cadastrar 1º Acesso
             </Button>
         </CardFooter>
       </Card>
@@ -278,13 +263,13 @@ export default function ColaboradorLoginPage() {
             <DialogHeader>
                 <DialogTitle>1º Acesso - Crie sua senha</DialogTitle>
                 <DialogDescription>
-                   Crie uma senha segura para acessar o registro de ponto.
+                   Defina uma senha para realizar seus registros de ponto.
                 </DialogDescription>
             </DialogHeader>
             <Form {...firstAccessForm}>
                 <form onSubmit={firstAccessForm.handleSubmit(handleFirstAccess)} className="space-y-4">
                     <div>
-                        <Label>CPF</Label>
+                        <Label>CPF identificado</Label>
                         <Input value={cpfForFirstAccess} disabled />
                     </div>
                     <FormField control={firstAccessForm.control} name="newPassword" render={({ field }) => (
@@ -305,15 +290,9 @@ export default function ColaboradorLoginPage() {
                             <FormMessage />
                         </FormItem>
                     )} />
-                    {firstAccessForm.formState.errors.root && (
-                         <p className="text-sm font-medium text-destructive">{firstAccessForm.formState.errors.root.message}</p>
-                    )}
                     <DialogFooter>
-                        <DialogClose asChild>
-                            <Button type="button" variant="outline">Cancelar</Button>
-                        </DialogClose>
-                        <Button type="submit" disabled={loading} className="bg-green-600 hover:bg-green-700">
-                             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "✅ Confirmar"}
+                        <Button type="submit" disabled={loading} className="w-full bg-green-600 hover:bg-green-700">
+                             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "✅ Ativar Acesso"}
                         </Button>
                     </DialogFooter>
                 </form>
