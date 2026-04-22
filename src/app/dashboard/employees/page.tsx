@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Edit, EllipsisVertical, PlusCircle, Trash2, Upload, User, Users, Loader2, AlertTriangle, KeyRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, Edit, EllipsisVertical, PlusCircle, Trash2, Upload, Users, Loader2, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -45,24 +45,21 @@ import { Badge } from "@/components/ui/badge";
 // Firebase Imports
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
-import { collection, doc, setDoc, updateDoc, query, where } from "firebase/firestore";
+import { collection, doc, setDoc, updateDoc, query } from "firebase/firestore";
 
 export default function EmployeesPage() {
   const { toast } = useToast();
   const { firestore } = useFirebase();
   const { userRole, tenantId } = useAuthContext();
-  const [error, setError] = useState<string | null>(null);
   
-  // 1. Estados de Diálogo e Paginação
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
-  const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
 
-  // 2. Fetch de Empresas (Para Master)
+  // 1. Fetch de Empresas (Para Master)
   const masterTenantsQuery = useMemoFirebase(() => 
     (firestore && userRole === 'master') ? query(collection(firestore, 'tenants')) : null, 
   [firestore, userRole]);
@@ -78,55 +75,54 @@ export default function EmployeesPage() {
 
   const finalTenantId = userRole === 'master' ? selectedTenantId : tenantId;
   
-  // 3. Fetch de Dados do Tenant Selecionado
+  // 2. Fetch de Colaboradores
   const employeesQuery = useMemoFirebase(() => 
     (firestore && finalTenantId) ? collection(firestore, 'tenants', finalTenantId, 'employees') : null, 
   [firestore, finalTenantId]);
   
-  const { data: employeesData, isLoading: employeesLoading, error: employeesError } = useCollection<Employee>(employeesQuery);
+  const { data: employeesData, isLoading: employeesLoading } = useCollection<Employee>(employeesQuery);
   const employees = useMemo(() => employeesData || [], [employeesData]);
 
-  // --- Lógica de Controle de Vagas ---
+  // --- LÓGICA DE CONTAGEM CORRIGIDA (STATUS "Ativo" + LEGADO) ---
   const activeEmployeesCount = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     return employees.filter(emp => {
-      if (!emp.terminationDate) return emp.status !== 'Inativo';
-      return new Date(emp.terminationDate) >= today;
+      // Considera ativo se status for "Ativo" OU se estiver vazio (legado) e não houver rescisão
+      const isStatusAtivo = emp.status === "Ativo" || !emp.status;
+      const hasNoTermination = !emp.terminationDate;
+      return isStatusAtivo && hasNoTermination;
     }).length;
   }, [employees]);
 
   const planLimit = 20; 
   const isLimitReached = activeEmployeesCount >= planLimit;
 
-  // 4. Queries de Apoio (Locations, Sectors, etc.)
+  // 3. Queries de Apoio (Contextualizadas pelo Tenant)
   const locationsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, [firestore, finalTenantId]);
   const { data: locations } = useCollection<Location>(locationsQuery);
   
-  const sectorsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'sectors') : null, [firestore]);
+  const sectorsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'sectors') : null, [firestore, finalTenantId]);
   const { data: sectors } = useCollection<Sector>(sectorsQuery);
 
-  const schedulesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'schedules') : null, [firestore]);
+  const schedulesQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'schedules') : null, [firestore, finalTenantId]);
   const { data: schedules } = useCollection<Schedule>(schedulesQuery);
 
-  const scalesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'scales') : null, [firestore]);
+  const scalesQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'scales') : null, [firestore, finalTenantId]);
   const { data: scales } = useCollection<Scale>(scalesQuery);
   
   const isLoading = employeesLoading || (userRole === 'master' && tenantsLoading);
   
-  // 5. Paginação
+  // 4. Paginação
   const totalPages = Math.ceil(employees.length / itemsPerPage);
   const paginatedEmployees = useMemo(() => {
     return employees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   }, [employees, currentPage, itemsPerPage]);
 
-  // 6. Handlers de Ação
+  // 5. Submit Handler (Sincronizado com o Form)
   const handleSubmitEmployee = async (data: any) => {
     if (!firestore || !finalTenantId) return;
 
     const isEditing = !!editingEmployee;
     
-    // Bloqueia apenas se for novo e exceder o limite
     if (!isEditing && isLimitReached) {
       toast({ 
         variant: "destructive", 
@@ -136,24 +132,18 @@ export default function EmployeesPage() {
       return;
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const termDate = data.terminationDate ? new Date(data.terminationDate) : null;
-    const newStatus = (termDate && termDate < today) ? 'Inativo' : 'Ativo';
-    
-    const employeeData = { 
-        ...data, 
-        status: newStatus,
-        tenantId: finalTenantId,
-        updatedAt: new Date().toISOString()
-    };
-
     try {
+      const employeeData = { 
+          ...data, 
+          tenantId: finalTenantId,
+          updatedAt: new Date().toISOString()
+      };
+
       if (isEditing && editingEmployee?.id) {
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', editingEmployee.id);
           await updateDoc(docRef, employeeData);
       } else {
-          // Usa o CPF limpo (sem pontos/traços) como ID se preferir, ou deixe o Firebase gerar
+          // ID baseado no CPF limpo
           const docId = data.cpf.replace(/\D/g, "");
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', docId);
           
@@ -164,7 +154,7 @@ export default function EmployeesPage() {
           await setDoc(docRef, employeeData);
       }
       
-      toast({ title: "Sucesso!", description: "Dados salvos corretamente." });
+      toast({ title: "Sucesso!", description: "Colaborador salvo com sucesso." });
       setIsDialogOpen(false);
       setEditingEmployee(null);
     } catch (err: any) {
@@ -180,7 +170,7 @@ export default function EmployeesPage() {
             <Users className="h-7 w-7 text-primary"/>
             Colaboradores
           </CardTitle>
-          <CardDescription>Gestão centralizada de funcionários e acessos.</CardDescription>
+          <CardDescription>Gestão de funcionários e permissões de acesso.</CardDescription>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
@@ -196,7 +186,7 @@ export default function EmployeesPage() {
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-               <span className="text-sm font-bold flex items-center gap-2"><KeyRound className="h-4 w-4"/> Empresa Alvo:</span>
+               <span className="text-sm font-bold flex items-center gap-2"><KeyRound className="h-4 w-4"/> Empresa:</span>
                <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
                   <SelectTrigger className="w-[300px] bg-background">
                     <SelectValue placeholder="Selecione a empresa" />
@@ -214,18 +204,17 @@ export default function EmployeesPage() {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
-            <p className="text-muted-foreground animate-pulse">Sincronizando com a nuvem...</p>
+            <p className="text-muted-foreground">Carregando dados...</p>
           </div>
         ) : paginatedEmployees.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-80 border-2 border-dashed rounded-xl bg-muted/30">
-            <Users className="h-16 w-16 text-muted-foreground/50 mb-4" />
-            <p className="text-xl font-medium text-muted-foreground">Nenhum registro encontrado</p>
-            <Button variant="link" onClick={() => setIsDialogOpen(true)}>Adicionar o primeiro</Button>
+            <Users className="h-16 w-16 text-muted-foreground/30 mb-4" />
+            <p className="text-lg font-medium text-muted-foreground">Nenhum colaborador encontrado</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {paginatedEmployees.map((emp) => (
-              <Card key={emp.id} className={`group hover:shadow-lg transition-all ${emp.status === 'Inativo' ? 'opacity-75 grayscale-[0.5]' : ''}`}>
+              <Card key={emp.id} className={`group hover:shadow-md transition-all ${emp.status === 'Inativo' ? 'opacity-60 grayscale' : ''}`}>
                 <CardContent className="p-6 relative">
                   <div className="absolute top-3 right-3">
                     <DropdownMenu>
@@ -246,9 +235,9 @@ export default function EmployeesPage() {
 
                   <div className="flex flex-col items-center">
                     <div className="relative">
-                      <Avatar className="h-20 w-20 border-4 border-background shadow-md">
+                      <Avatar className="h-20 w-20 border shadow-sm">
                         <AvatarImage src={emp.avatarUrl} alt={emp.name} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                        <AvatarFallback className="bg-primary/5 text-primary font-bold">
                           {emp.name?.slice(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
@@ -257,9 +246,9 @@ export default function EmployeesPage() {
                       )}
                     </div>
                     <h3 className="mt-4 font-bold text-center line-clamp-1">{emp.name}</h3>
-                    <p className="text-xs text-muted-foreground font-mono mt-1">{emp.cpf}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{emp.cpf}</p>
                     <div className="mt-4 flex flex-wrap justify-center gap-1">
-                      <Badge variant="secondary" className="text-[10px]">{emp.setor || 'Sem Setor'}</Badge>
+                      <Badge variant="secondary" className="text-[10px]">{emp.setor || 'Geral'}</Badge>
                       <Badge variant="outline" className="text-[10px]">Mat: {emp.matricula}</Badge>
                     </div>
                   </div>
@@ -270,11 +259,11 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      <footer className="flex items-center justify-between pt-6 border-t">
+      <footer className="flex items-center justify-between pt-6 border-t mt-auto">
         <div className="flex flex-col">
           <p className="text-sm font-medium">Total: {employees.length} registros</p>
           <div className="flex items-center gap-2 mt-1">
-            <div className="h-2 w-24 bg-muted rounded-full overflow-hidden">
+            <div className="h-1.5 w-24 bg-muted rounded-full overflow-hidden">
                <div 
                 className={`h-full ${isLimitReached ? 'bg-destructive' : 'bg-primary'} transition-all`} 
                 style={{ width: `${Math.min((activeEmployeesCount / planLimit) * 100, 100)}%` }}
@@ -285,19 +274,18 @@ export default function EmployeesPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>
-            <ChevronLeft className="h-4 w-4" />
+          <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>
+            <ChevronLeft className="h-4 w-4" /> Anterior
           </Button>
-          <span className="text-sm px-4">Pág. {currentPage}</span>
-          <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage >= totalPages}>
-            <ChevronRight className="h-4 w-4" />
+          <span className="text-xs font-medium px-2">Página {currentPage}</span>
+          <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage >= totalPages}>
+            Próximo <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       </footer>
 
       {/* Modais */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        {isDialogOpen && (
           <EmployeeForm 
             employee={editingEmployee}
             onSubmit={handleSubmitEmployee}
@@ -305,10 +293,8 @@ export default function EmployeesPage() {
             sectors={sectors || []}
             schedules={schedules || []}
             scales={scales || []}
-            activeCount={activeEmployeesCount}
             isLimitReached={isLimitReached}
           />
-        )}
       </Dialog>
 
       <AlertDialog open={isConfirmDeleteDialogOpen} onOpenChange={setIsConfirmDeleteDialogOpen}>
@@ -316,8 +302,8 @@ export default function EmployeesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Ação Restrita</AlertDialogTitle>
             <AlertDialogDescription>
-              Para manter a conformidade legal e o histórico de pontos, funcionários não podem ser excluídos. 
-              Por favor, defina uma <strong>Data de Rescisão</strong> no cadastro para inativá-lo.
+              Para conformidade legal, funcionários não podem ser excluídos. 
+              Use o campo <strong>Data de Rescisão</strong> no formulário para inativar o colaborador e liberar a vaga.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -325,6 +311,8 @@ export default function EmployeesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <EmployeeImportDialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen} tenantId={finalTenantId || ''} />
     </div>
   );
 }
