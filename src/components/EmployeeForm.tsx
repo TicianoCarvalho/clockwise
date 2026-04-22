@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect } from "react";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Camera, Upload, User, RefreshCw } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +21,7 @@ import {
   FormField,
   FormItem,
   FormLabel,
+  FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/select";
 import { type Employee, type Location, type Sector, type Schedule, type Scale } from "@/lib/data";
 import { Switch } from "./ui/switch";
-import { useToast } from "@/hooks/use-toast";
+import { Separator } from "./ui/separator";
 
 const cpfRegex = /^\d{3}\.\d{3}\.\d{3}-\d{2}$/;
 
@@ -121,10 +121,8 @@ export function EmployeeForm({
         status: (employee as any).status === "Ativo",
         admissionDate: employee.admissionDate ? parseISO(employee.admissionDate) : null,
         birthDate: (employee as any).birthDate ? parseISO((employee as any).birthDate) : null,
-        terminationDate: (employee as any).terminationDate ? parseISO((employee as any).terminationDate) : null,
         scaleStartDate: (employee as any).scaleStartDate ? parseISO((employee as any).scaleStartDate) : null,
         scaleId: employee.scaleId || "",
-        password: "", 
       });
     }
   }, [employee, form]);
@@ -135,65 +133,65 @@ export function EmployeeForm({
       status: data.status ? "Ativo" : "Inativo",
       admissionDate: data.admissionDate ? format(data.admissionDate, 'yyyy-MM-dd') : null,
       birthDate: data.birthDate ? format(data.birthDate, 'yyyy-MM-dd') : null,
-      terminationDate: data.terminationDate ? format(data.terminationDate, 'yyyy-MM-dd') : null,
-      scaleStartDate: data.scaleStartDate ? format(data.scaleStartDate, 'yyyy-MM-dd') : null,
-      scaleId: data.scaleId === "" ? null : data.scaleId,
     };
     onSubmit(payload);
   };
 
-  // Função para pegar nome/label com segurança
   const getSafeLabel = (item: any) => item?.name || item?.nome || item?.descricao || "Sem nome";
 
   return (
     <DialogContent className="sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>{employee ? "Editar Funcionário" : "Adicionar Funcionário"}</DialogTitle>
-        <DialogDescription>Atualize as informações contratuais e de acesso do colaborador.</DialogDescription>
+        <DialogDescription>Configure os dados e permissões de ponto do colaborador.</DialogDescription>
       </DialogHeader>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(handleFormSubmit)}>
           <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-2">
             
-            {/* STATUS E PERFIL */}
-            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border">
-              <FormField control={form.control} name="status" render={({ field }) => (
-                <FormItem className="flex items-center justify-between space-y-0">
-                  <FormLabel className="font-bold">Status</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="role" render={({ field }) => (
-                <FormItem>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Acesso" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="admin">Administrador</SelectItem>
-                      <SelectItem value="supervisor">Supervisor</SelectItem>
-                      <SelectItem value="usuario">Usuário Comum</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
+            {/* SEÇÃO 1: PERMISSÕES DE PONTO (O QUE TINHA SUMIDO) */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 space-y-4">
+              <h4 className="text-sm font-semibold text-blue-900 uppercase tracking-wider">Regras de Acesso e Ponto</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="allowMobilePunch" render={({ field }) => (
+                  <FormItem className="flex items-center justify-between p-2 bg-white rounded border">
+                    <div className="space-y-0.5">
+                      <FormLabel>Ponto Mobile</FormLabel>
+                    </div>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="automaticInterval" render={({ field }) => (
+                  <FormItem className="flex items-center justify-between p-2 bg-white rounded border">
+                    <div className="space-y-0.5">
+                      <FormLabel>Intervalo Autom.</FormLabel>
+                    </div>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )} />
+              </div>
             </div>
 
+            <Separator />
+
+            {/* SEÇÃO 2: DADOS BÁSICOS */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="name" render={({ field }) => (
-                <FormItem><FormLabel>Nome*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                <FormItem><FormLabel>Nome Completo*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
               )} />
               <FormField control={form.control} name="cpf" render={({ field }) => (
                 <FormItem><FormLabel>CPF*</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} /></FormControl></FormItem>
               )} />
             </div>
 
-            {/* SELECTS COM FILTRO DE SEGURANÇA */}
+            {/* SEÇÃO 3: ALOCAÇÃO (SETOR E LOCAL) */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="localTrabalho" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Local</FormLabel>
+                  <FormLabel>Local de Trabalho</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o Local" /></SelectTrigger></FormControl>
                     <SelectContent>
                       {locations.filter(i => i.id).map(i => (
                         <SelectItem key={i.id} value={getSafeLabel(i)}>{getSafeLabel(i)}</SelectItem>
@@ -206,7 +204,7 @@ export function EmployeeForm({
                 <FormItem>
                   <FormLabel>Setor</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o Setor" /></SelectTrigger></FormControl>
                     <SelectContent>
                       {sectors.filter(i => i.id).map(i => (
                         <SelectItem key={i.id} value={getSafeLabel(i)}>{getSafeLabel(i)}</SelectItem>
@@ -217,35 +215,38 @@ export function EmployeeForm({
               )} />
             </div>
 
-            <FormField control={form.control} name="scheduleId" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Horário Base</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    {schedules.filter(i => i.id).map(i => (
-                      <SelectItem key={i.id} value={i.id}>{getSafeLabel(i)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )} />
+            {/* SEÇÃO 4: HORÁRIOS */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="scheduleId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Horário Base</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Horário" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {schedules.filter(i => i.id).map(i => (
+                        <SelectItem key={i.id} value={i.id}>{getSafeLabel(i)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="scaleId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Escala (Opcional)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || ""}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Escala" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhuma</SelectItem>
+                      {scales.filter(i => i.id).map(i => (
+                        <SelectItem key={i.id} value={i.id}>{getSafeLabel(i)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
 
-            <FormField control={form.control} name="scaleId" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Escala (Opcional)</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value || ""}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma Escala</SelectItem>
-                    {scales.filter(i => i.id).map(i => (
-                      <SelectItem key={i.id} value={i.id}>{getSafeLabel(i)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )} />
-
+            {/* SEÇÃO 5: CONTRATUAL */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="matricula" render={({ field }) => (
                 <FormItem><FormLabel>Matrícula</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
@@ -254,11 +255,12 @@ export function EmployeeForm({
                 <FormItem><FormLabel>eSocial</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
               )} />
             </div>
+
           </div>
 
           <DialogFooter className="pt-4 border-t">
             <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
-            <Button type="submit" disabled={!employee && isLimitReached}>Salvar</Button>
+            <Button type="submit" disabled={!employee && isLimitReached}>Finalizar Registro</Button>
           </DialogFooter>
         </form>
       </Form>
