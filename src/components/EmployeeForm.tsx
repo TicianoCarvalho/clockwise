@@ -9,10 +9,10 @@ import { format, parseISO } from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
@@ -32,9 +32,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { type Employee, type Location, type Sector, type Schedule, type Scale } from "@/lib/data";
-import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
-import { Separator } from "./ui/separator";
-import { DatePicker } from "./ui/date-picker";
 import { Switch } from "./ui/switch";
 import { useToast } from "@/hooks/use-toast";
 
@@ -87,7 +84,6 @@ export function EmployeeForm({
   scales = [],
   isLimitReached = false 
 }: EmployeeFormProps) {
-  const { toast } = useToast();
   
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -146,15 +142,14 @@ export function EmployeeForm({
     onSubmit(payload);
   };
 
-  // Função auxiliar para extrair o nome de qualquer campo comum do Firestore
-  const getItemLabel = (item: any) => {
-    return item.name || item.nome || item.descricao || item.label || "Sem nome";
-  };
+  // Função para pegar nome/label com segurança
+  const getSafeLabel = (item: any) => item?.name || item?.nome || item?.descricao || "Sem nome";
 
   return (
     <DialogContent className="sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>{employee ? "Editar Funcionário" : "Adicionar Funcionário"}</DialogTitle>
+        <DialogDescription>Atualize as informações contratuais e de acesso do colaborador.</DialogDescription>
       </DialogHeader>
 
       <Form {...form}>
@@ -165,14 +160,14 @@ export function EmployeeForm({
             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border">
               <FormField control={form.control} name="status" render={({ field }) => (
                 <FormItem className="flex items-center justify-between space-y-0">
-                  <FormLabel className="font-bold">Status do Colaborador</FormLabel>
+                  <FormLabel className="font-bold">Status</FormLabel>
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
               )} />
               <FormField control={form.control} name="role" render={({ field }) => (
                 <FormItem>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Nível de Acesso" /></SelectTrigger></FormControl>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Acesso" /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value="admin">Administrador</SelectItem>
                       <SelectItem value="supervisor">Supervisor</SelectItem>
@@ -183,26 +178,25 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* DADOS PESSOAIS */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="name" render={({ field }) => (
-                <FormItem><FormLabel>Nome Completo*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                <FormItem><FormLabel>Nome*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
               )} />
               <FormField control={form.control} name="cpf" render={({ field }) => (
                 <FormItem><FormLabel>CPF*</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} /></FormControl></FormItem>
               )} />
             </div>
 
-            {/* LOCAL E SETOR */}
+            {/* SELECTS COM FILTRO DE SEGURANÇA */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="localTrabalho" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Local de Trabalho</FormLabel>
+                  <FormLabel>Local</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {locations.map(l => (
-                        <SelectItem key={l.id} value={getItemLabel(l)}>{getItemLabel(l)}</SelectItem>
+                      {locations.filter(i => i.id).map(i => (
+                        <SelectItem key={i.id} value={getSafeLabel(i)}>{getSafeLabel(i)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -214,8 +208,8 @@ export function EmployeeForm({
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {sectors.map(s => (
-                        <SelectItem key={s.id} value={getItemLabel(s)}>{getItemLabel(s)}</SelectItem>
+                      {sectors.filter(i => i.id).map(i => (
+                        <SelectItem key={i.id} value={getSafeLabel(i)}>{getSafeLabel(i)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -223,58 +217,48 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* HORÁRIO */}
-            <div className="grid grid-cols-1 gap-4">
-              <FormField control={form.control} name="scheduleId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Horário Base (Regra de Ponto)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o Horário" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {schedules.map(s => (
-                        <SelectItem key={s.id} value={s.id}>{getItemLabel(s)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-            </div>
+            <FormField control={form.control} name="scheduleId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Horário Base</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    {schedules.filter(i => i.id).map(i => (
+                      <SelectItem key={i.id} value={i.id}>{getSafeLabel(i)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )} />
 
-            {/* ESCALA */}
-            <div className="grid grid-cols-1 gap-4">
-              <FormField control={form.control} name="scaleId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Escala de Trabalho (Opcional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || ""}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione a Escala" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="">Nenhuma Escala</SelectItem>
-                      {scales.map(sc => (
-                        <SelectItem key={sc.id} value={sc.id}>{getItemLabel(sc)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-            </div>
+            <FormField control={form.control} name="scaleId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Escala (Opcional)</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value || ""}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma Escala</SelectItem>
+                    {scales.filter(i => i.id).map(i => (
+                      <SelectItem key={i.id} value={i.id}>{getSafeLabel(i)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )} />
 
-            {/* MATRÍCULA */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="matricula" render={({ field }) => (
-                <FormItem><FormLabel>Matrícula*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                <FormItem><FormLabel>Matrícula</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
               )} />
               <FormField control={form.control} name="esocialMatricula" render={({ field }) => (
-                <FormItem><FormLabel>Matrícula eSocial*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                <FormItem><FormLabel>eSocial</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
               )} />
             </div>
-
           </div>
 
           <DialogFooter className="pt-4 border-t">
             <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
-            <Button type="submit" disabled={!employee && isLimitReached}>
-              {employee ? "Salvar Alterações" : "Cadastrar"}
-            </Button>
+            <Button type="submit" disabled={!employee && isLimitReached}>Salvar</Button>
           </DialogFooter>
         </form>
       </Form>
