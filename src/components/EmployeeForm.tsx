@@ -5,6 +5,7 @@ import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, parseISO } from "date-fns";
+import { Camera, Users, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -30,9 +31,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import { type Employee, type Location, type Sector, type Schedule, type Scale } from "@/lib/data";
-import { Switch } from "./ui/switch";
-import { Separator } from "./ui/separator";
 
 const cpfRegex = /^\d{3}\.\d{3}\.\d{3}-\d{2}$/;
 
@@ -52,12 +54,12 @@ const formSchema = z.object({
   matricula: z.string().min(1, "A matrícula é obrigatória."),
   name: z.string().min(1, "O nome é obrigatório."),
   password: z.string().default(""),
-  role: z.string().default("usuario"), // admin, supervisor, usuario
+  role: z.string().default("usuario"),
   scaleId: z.string().optional().nullable(),
   scaleStartDate: z.date().optional().nullable(),
   scheduleId: z.string().min(1, "O horário é obrigatório."),
   setor: z.string().min(1, "O setor é obrigatório."),
-  status: z.boolean().default(true), // Mapeia para "Ativo" / "Inativo"
+  status: z.boolean().default(true),
   terminationDate: z.date().optional().nullable(),
   workModel: z.string().default("standard"),
 });
@@ -142,14 +144,64 @@ export function EmployeeForm({
   return (
     <DialogContent className="sm:max-w-2xl">
       <DialogHeader>
-        <DialogTitle>{employee ? "Editar Funcionário" : "Adicionar Funcionário"}</DialogTitle>
-        <DialogDescription>Todos os campos obrigatórios para o eSocial e controle de ponto.</DialogDescription>
+        <DialogTitle>{employee ? "Editar Colaborador" : "Novo Colaborador"}</DialogTitle>
+        <DialogDescription>Cadastre a biometria e os dados contratuais.</DialogDescription>
       </DialogHeader>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(handleFormSubmit)}>
           <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
             
+            {/* SEÇÃO DE BIOMETRIA FACIAL */}
+            <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl bg-slate-50 mb-4 border-primary/20">
+              <div className="relative">
+                <Avatar className="h-28 w-28 border-4 border-white shadow-xl">
+                  <AvatarImage src={form.watch("avatarUrl")} className="object-cover" />
+                  <AvatarFallback className="bg-primary/10 text-primary">
+                    <Users className="h-10 w-10 opacity-20" />
+                  </AvatarFallback>
+                </Avatar>
+                {form.watch("avatarUrl") && (
+                  <div className="absolute -top-1 -right-1 bg-green-500 text-white p-1 rounded-full shadow-md">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.capture = 'user';
+                    input.onchange = (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => form.setValue("avatarUrl", reader.result as string);
+                        reader.readAsDataURL(file);
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  Capturar Biometria
+                </Button>
+                {form.watch("avatarUrl") && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => form.setValue("avatarUrl", "")}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+
             {/* STATUS E NIVEL DE ACESSO */}
             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border">
               <FormField control={form.control} name="status" render={({ field }) => (
@@ -162,11 +214,11 @@ export function EmployeeForm({
                 <FormItem>
                   <FormLabel>Nível de Acesso</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o acesso" /></SelectTrigger></FormControl>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Acesso" /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value="admin">Administrador</SelectItem>
                       <SelectItem value="supervisor">Supervisor</SelectItem>
-                      <SelectItem value="usuario">Usuário Comum (Colaborador)</SelectItem>
+                      <SelectItem value="usuario">Colaborador</SelectItem>
                     </SelectContent>
                   </Select>
                 </FormItem>
@@ -198,7 +250,7 @@ export function EmployeeForm({
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 grid grid-cols-2 gap-4">
               <FormField control={form.control} name="allowMobilePunch" render={({ field }) => (
                 <FormItem className="flex items-center justify-between p-2 bg-white rounded border">
-                  <FormLabel className="text-xs">Permitir Ponto Mobile</FormLabel>
+                  <FormLabel className="text-xs">Ponto Mobile</FormLabel>
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
               )} />
@@ -218,7 +270,7 @@ export function EmployeeForm({
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {locations.filter(l => l.id).map(l => (
+                      {locations.map(l => (
                         <SelectItem key={l.id} value={getSafeLabel(l)}>{getSafeLabel(l)}</SelectItem>
                       ))}
                     </SelectContent>
@@ -231,7 +283,7 @@ export function EmployeeForm({
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {sectors.filter(s => s.id).map(s => (
+                      {sectors.map(s => (
                         <SelectItem key={s.id} value={getSafeLabel(s)}>{getSafeLabel(s)}</SelectItem>
                       ))}
                     </SelectContent>
@@ -248,7 +300,7 @@ export function EmployeeForm({
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Horário" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {schedules.filter(h => h.id).map(h => (
+                      {schedules.map(h => (
                         <SelectItem key={h.id} value={h.id}>{getSafeLabel(h)}</SelectItem>
                       ))}
                     </SelectContent>
@@ -257,12 +309,12 @@ export function EmployeeForm({
               )} />
               <FormField control={form.control} name="scaleId" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Escala (Opcional)</FormLabel>
+                  <FormLabel>Escala</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value || ""}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Nenhuma" /></SelectTrigger></FormControl>
                     <SelectContent>
                       <SelectItem value="none">Nenhuma Escala</SelectItem>
-                      {scales.filter(e => e.id).map(e => (
+                      {scales.map(e => (
                         <SelectItem key={e.id} value={e.id}>{getSafeLabel(e)}</SelectItem>
                       ))}
                     </SelectContent>
