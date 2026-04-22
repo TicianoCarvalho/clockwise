@@ -1,93 +1,124 @@
-import * as functions from "firebase-functions";
+import * as functions from "firebase-functions/v1"; // Força o uso da V1 para evitar conflitos
 import * as admin from "firebase-admin";
+import axios from "axios";
+import * as https from "https";
+import * as fs from "fs";
+import * as path from "path";
 
-// Inicializa o SDK sem duplicar se já estiver rodando
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+const db = admin.firestore();
+
+// --- CONFIGURAÇÃO CORA SEGURA ---
+const getCoraClient = () => {
+  const certPath = path.join(__dirname, "certs", "cora-cert.pem");
+  const keyPath = path.join(__dirname, "certs", "cora-key.key");
+
+  // Verifica se arquivos existem antes de ler para evitar timeout no deploy
+  if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+    return axios.create({ baseURL: "https://api.cora.com.br" });
+  }
+
+  const httpsAgent = new https.Agent({
+    cert: fs.readFileSync(certPath),
+    key: fs.readFileSync(keyPath),
+  });
+
+  return axios.create({
+    baseURL: "https://api.cora.com.br",
+    httpsAgent,
+  });
+};
+
 /**
- * Cloud Function: Sincroniza Claims do Usuário
- * Garante que o tenantId e o role estejam no Token de Autenticação.
+ * Cloud Function: Geração de QR Code Pix
+ */
+export const generateSubscriptionPix = functions.https.onCall(async (data: any, context: functions.https.CallableContext) => {
+  // Agora o TypeScript entende 'context.auth'
+  if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Login necessário.");
+
+  const { tenantId, amount } = data;
+
+  try {
+    const cora = getCoraClient();
+    const response = await cora.post("/v1/pix/transfers", {
+      amount: amount,
+      external_id: tenantId, 
+      description: "Assinatura SaaS"
+    });
+
+    return {
+      pixCopyPaste: response.data.emv,
+      qrCodeUrl: response.data.qr_code_url
+    };
+  } catch (error) {
+    console.error("Erro ao gerar Pix Cora:", error);
+    throw new functions.https.HttpsError("internal", "Erro ao processar pagamento.");
+  }
+});
+
+/**
+ * Cloud Function: Webhook
+ */
+export const coraWebhook = functions.https.onRequest(async (req, res) => {
+  functions.logger.info("Webhook recebido da Cora", { signature: req.headers["cora-signature"] }); 
+  
+  const { event, data } = req.body;
+
+  try {
+    if (event === "transaction.created" && data.type === "CREDIT") {
+      const tenantId = data.external_id;
+      if (tenantId) {
+        const tenantRef = db.collection("tenants").doc(tenantId);
+        await tenantRef.update({
+          statusAssinatura: "pago",
+          dataExpiracao: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    }
+    res.status(200).send("OK");
+  } catch (error) {
+    res.status(500).send("Erro");
+  }
+});
+
+/**
+ * Cloud Function: Sincroniza Claims
  */
 export const syncUserClaims = functions.firestore
   .document("users/{userId}")
-  .onWrite(async (change, context) => {
-    const { userId } = context.params;
+  .onWrite(async (change: functions.Change<admin.firestore.DocumentSnapshot>, _context: functions.EventContext) => {
+    const userId = _context.params.userId;
     const afterData = change.after.data();
     const beforeData = change.before.data();
 
-    // 1. Caso de Deleção
-    if (!afterData) {
-      console.log(`Usuário ${userId} deletado. Claims expirarão com o token.`);
+    if (!afterData) return null;
+
+    if (beforeData && beforeData.role === afterData.role && beforeData.tenantId === afterData.tenantId) {
       return null;
     }
 
-    // 2. Evitar execuções desnecessárias (Otimização de custo)
-    if (
-      beforeData &&
-      beforeData.role === afterData.role &&
-      beforeData.tenantId === afterData.tenantId
-    ) {
-      return null;
-    }
-
-    // 3. Validação de Dados
-    if (!afterData.role) {
-      console.error(`Erro: Role ausente para o usuário ${userId}`);
-      return null;
-    }
-
-    // 4. Montagem dos Claims
-    const claims: any = {
-      role: afterData.role,
-    };
-
-    if (afterData.tenantId) {
-      claims.tenantId = afterData.tenantId;
-    }
-
-    // Segurança: Bloqueia não-masters sem TenantId
-    if (afterData.role !== "master" && !afterData.tenantId) {
-      console.error(`Erro: Usuário ${userId} sem tenantId vinculado.`);
-      return null;
-    }
+    const claims: any = { role: afterData.role };
+    if (afterData.tenantId) claims.tenantId = afterData.tenantId;
 
     try {
       await admin.auth().setCustomUserClaims(userId, claims);
-      console.log(`Claims definidos para ${userId}:`, claims);
-      
-      // Forçar atualização do timestamp no doc para o front-end saber que mudou
-      return change.after.ref.set({ 
-        _lastClaimUpdate: admin.firestore.FieldValue.serverTimestamp() 
-      }, { merge: true });
-      
+      return change.after.ref.set({ _lastClaimUpdate: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
     } catch (error) {
-      console.error(`Erro ao definir claims para ${userId}:`, error);
       return null;
     }
   });
 
 /**
- * Cloud Function: Processamento de Batida de Ponto
- * Acionada quando um funcionário bate o ponto via API segura.
+ * Cloud Function: Processamento de Ponto
  */
 export const processPunch = functions.firestore
   .document("tenants/{tenantId}/punches/{punchId}")
-  .onCreate(async (snap, context) => {
-    const newPunch = snap.data();
-    const { tenantId, punchId } = context.params;
-
-    // Log estruturado para auditoria
-    functions.logger.info(`Processando Ponto: [${punchId}] | Empresa: [${tenantId}]`, {
-      employeeId: newPunch.employeeId,
-      timestamp: newPunch.timestamp
-    });
-
-    // Aqui entrará a lógica de cálculo de horas (Regra de Negócio)
-    // 1. Buscar escala do funcionário
-    // 2. Calcular atrasos/horas extras
-    // 3. Atualizar o resumo mensal do funcionário
-
+  .onCreate(async (snap: admin.firestore.QueryDocumentSnapshot, context: functions.EventContext) => {
+    const { tenantId } = context.params;
+    functions.logger.info(`Ponto registrado no Tenant: ${tenantId}`, { id: snap.id });
     return null;
   });
