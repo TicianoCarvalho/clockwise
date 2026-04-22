@@ -81,11 +81,9 @@ export default function EmployeesPage() {
   [firestore, finalTenantId]);
   
   const { data: employeesData, isLoading: employeesLoading } = useCollection<Employee>(employeesQuery);
-  
-  // Proteção contra dados nulos na listagem
   const employees = useMemo(() => employeesData || [], [employeesData]);
 
-  // --- LÓGICA DE CONTAGEM CORRIGIDA (STATUS "Ativo" + LEGADO) ---
+  // --- LÓGICA DE CONTAGEM CORRIGIDA ---
   const activeEmployeesCount = useMemo(() => {
     return employees.filter(emp => {
       const isStatusAtivo = emp?.status === "Ativo" || !emp?.status;
@@ -97,17 +95,18 @@ export default function EmployeesPage() {
   const planLimit = 20; 
   const isLimitReached = activeEmployeesCount >= planLimit;
 
-  // 3. Queries de Apoio
-  const locationsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, [firestore, finalTenantId]);
+  // 3. Queries de Apoio (AJUSTADAS PARA CAMINHO GLOBAL)
+  // Se os seus dados estiverem na raiz do Firestore, esses caminhos são os corretos.
+  const locationsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'locations') : null, [firestore]);
   const { data: locations } = useCollection<Location>(locationsQuery);
   
-  const sectorsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'sectors') : null, [firestore, finalTenantId]);
+  const sectorsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'sectors') : null, [firestore]);
   const { data: sectors } = useCollection<Sector>(sectorsQuery);
 
-  const schedulesQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'schedules') : null, [firestore, finalTenantId]);
+  const schedulesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'schedules') : null, [firestore]);
   const { data: schedules } = useCollection<Schedule>(schedulesQuery);
 
-  const scalesQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'scales') : null, [firestore, finalTenantId]);
+  const scalesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'scales') : null, [firestore]);
   const { data: scales } = useCollection<Scale>(scalesQuery);
   
   const isLoading = employeesLoading || (userRole === 'master' && tenantsLoading);
@@ -284,7 +283,7 @@ export default function EmployeesPage() {
         </div>
       </footer>
 
-      {/* Modais centralizados no Dialog para evitar erro de Portal */}
+      {/* Modais centralizados */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <EmployeeForm 
             employee={editingEmployee}
@@ -297,7 +296,6 @@ export default function EmployeesPage() {
           />
       </Dialog>
 
-      {/* Modal de Importação separado para garantir contexto próprio de Dialog */}
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
           <EmployeeImportDialog tenantId={finalTenantId || ''} onOpenChange={setIsImportDialogOpen} />
       </Dialog>
@@ -308,7 +306,7 @@ export default function EmployeesPage() {
             <AlertDialogTitle>Ação Restrita</AlertDialogTitle>
             <AlertDialogDescription>
               Para conformidade legal, funcionários não podem ser excluídos. 
-              Use o campo <strong>Data de Rescisão</strong> no formulário para inativar o colaborador e liberar a vaga.
+              Use o campo <strong>Data de Rescisão</strong> no formulário para inativar o colaborador.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
