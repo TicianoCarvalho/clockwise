@@ -9,7 +9,6 @@ import { format, parseISO } from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -49,8 +48,8 @@ const formSchema = z.object({
   email: z.string().email("O email é inválido."),
   password: z.string().min(6, "A senha deve ter no mínimo 6 caracteres.").optional().or(z.literal('')),
   cpf: z.string().regex(cpfRegex, "Formato de CPF inválido. Use XXX.XXX.XXX-XX."),
-  celular: z.string().min(1, "O número de celular é obrigatório."), // Campo: phone
-  esocialMatricula: z.string().optional(), // Campo: eSocialId
+  celular: z.string().min(1, "O número de celular é obrigatório."),
+  esocialMatricula: z.string().min(1, "O eSocial é obrigatório."),
   admissionDate: z.date().optional().nullable(),
   birthDate: z.date().optional().nullable(),
   terminationDate: z.date().optional().nullable(),
@@ -145,8 +144,8 @@ export function EmployeeForm({
   const handleFormSubmit: SubmitHandler<FormValues> = (data) => {
     const cleanedData = {
       ...data,
-      phone: data.celular, // Mapeia para o campo correto do Firestore
-      eSocialId: data.esocialMatricula, // Mapeia para o campo correto do Firestore
+      phone: data.celular, 
+      eSocialId: data.esocialMatricula, 
       admissionDate: data.admissionDate ? format(data.admissionDate, 'yyyy-MM-dd') : null,
       birthDate: data.birthDate ? format(data.birthDate, 'yyyy-MM-dd') : null,
       terminationDate: data.terminationDate ? format(data.terminationDate, 'yyyy-MM-dd') : null,
@@ -169,7 +168,7 @@ export function EmployeeForm({
         <form onSubmit={form.handleSubmit(handleFormSubmit)}>
           <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-4">
             
-            {/* Seção de Foto */}
+            {/* Foto e Biometria */}
             <FormField
               control={form.control}
               name="avatarUrl"
@@ -207,18 +206,17 @@ export function EmployeeForm({
             </div>
 
             <Separator />
-            <p className="text-sm font-medium text-muted-foreground">Dados Contratuais</p>
+            <p className="text-sm font-medium text-muted-foreground">Dados Contratuais e eSocial</p>
 
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="admissionDate" render={({ field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Data de Admissão</FormLabel>
                   <DatePicker date={field.value || undefined} setDate={field.onChange} />
-                  <FormMessage />
                 </FormItem>
               )} />
               <FormField control={form.control} name="esocialMatricula" render={({ field }) => (
-                <FormItem><FormLabel>ID eSocial</FormLabel><FormControl><Input placeholder="Código eSocial" {...field} /></FormControl><FormMessage /></FormItem>
+                <FormItem><FormLabel>ID eSocial*</FormLabel><FormControl><Input placeholder="Código eSocial" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
 
@@ -232,32 +230,65 @@ export function EmployeeForm({
                   </Select>
                 </FormItem>
               )} />
+              <FormField control={form.control} name="localTrabalho" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Local de Trabalho</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Ex: Depósito" /></SelectTrigger></FormControl>
+                    <SelectContent>{locations.map(l => <SelectItem key={l.id} value={l.name}>{l.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="scheduleId" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Horário de Trabalho</FormLabel>
+                  <FormLabel>Horário Base</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
                     <SelectContent>{schedules.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                   </Select>
                 </FormItem>
               )} />
+              <FormField control={form.control} name="scaleId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Escala (Revezamento)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Sem escala fixa" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="__NONE__">Nenhuma (Horário Fixo)</SelectItem>
+                      {scales.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
             </div>
 
             <Separator />
-            <p className="text-sm font-medium text-muted-foreground">Configurações de Ponto</p>
+            <p className="text-sm font-medium text-muted-foreground">Configurações de Ponto Mobile</p>
 
-            <div className="grid grid-cols-1 gap-4">
+            <div className="grid grid-cols-1 gap-2">
               <FormField control={form.control} name="allowMobilePunch" render={({ field }) => (
                 <FormItem className="flex items-center justify-between rounded-md border p-3">
                   <div>
-                    <FormLabel>Permitir Ponto Mobile</FormLabel>
-                    <FormDescription>Ativa GPS e Câmera no celular do colaborador</FormDescription>
+                    <FormLabel className="text-base">Permitir Ponto via App</FormLabel>
+                    <FormDescription>Ativa GPS e Reconhecimento Facial</FormDescription>
+                  </div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+
+              <FormField control={form.control} name="automaticInterval" render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-md border p-3">
+                  <div>
+                    <FormLabel className="text-base">Intervalo Automático</FormLabel>
+                    <FormDescription>O sistema abate o almoço automaticamente</FormDescription>
                   </div>
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
               )} />
             </div>
-
           </div>
 
           <DialogFooter className="pt-4 border-t">
