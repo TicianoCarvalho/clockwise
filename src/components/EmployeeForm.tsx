@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, parseISO } from "date-fns";
-import { Camera, Users, Trash2 } from "lucide-react";
+import { Camera, Users, Trash2, Upload, X, Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -86,6 +86,10 @@ export function EmployeeForm({
   isLimitReached = false 
 }: EmployeeFormProps) {
   
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -128,6 +132,61 @@ export function EmployeeForm({
     }
   }, [employee, form]);
 
+  // --- LÓGICA DE CÂMERA ---
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "user", width: 400, height: 400 } 
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setIsCameraActive(true);
+      }
+    } catch (err) {
+      console.error("Erro ao acessar câmera:", err);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current?.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      setIsCameraActive(false);
+    }
+  };
+
+  const takePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        // Espelha a imagem para o canvas se estiver usando a frontal
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+        form.setValue("avatarUrl", dataUrl);
+        stopCamera();
+      }
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => form.setValue("avatarUrl", reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  useEffect(() => {
+    return () => stopCamera();
+  }, []);
+
   const handleFormSubmit: SubmitHandler<FormValues> = (data) => {
     const payload = {
       ...data,
@@ -145,61 +204,68 @@ export function EmployeeForm({
     <DialogContent className="sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>{employee ? "Editar Colaborador" : "Novo Colaborador"}</DialogTitle>
-        <DialogDescription>Cadastre a biometria e os dados contratuais.</DialogDescription>
+        <DialogDescription>Cadastre a biometria facial e os dados do funcionário.</DialogDescription>
       </DialogHeader>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(handleFormSubmit)}>
           <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
             
-            {/* SEÇÃO DE BIOMETRIA FACIAL */}
-            <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl bg-slate-50 mb-4 border-primary/20">
-              <div className="relative">
-                <Avatar className="h-28 w-28 border-4 border-white shadow-xl">
-                  <AvatarImage src={form.watch("avatarUrl")} className="object-cover" />
-                  <AvatarFallback className="bg-primary/10 text-primary">
-                    <Users className="h-10 w-10 opacity-20" />
-                  </AvatarFallback>
-                </Avatar>
-                {form.watch("avatarUrl") && (
-                  <div className="absolute -top-1 -right-1 bg-green-500 text-white p-1 rounded-full shadow-md">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
+            {/* ÁREA DE BIOMETRIA DINÂMICA */}
+            <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl bg-slate-50 mb-4 border-primary/20 relative">
+              
+              {!isCameraActive ? (
+                <div className="flex flex-col items-center">
+                  <div className="relative mb-4">
+                    <Avatar className="h-28 w-28 border-4 border-white shadow-xl">
+                      <AvatarImage src={form.watch("avatarUrl")} className="object-cover" />
+                      <AvatarFallback className="bg-primary/10 text-primary">
+                        <Users className="h-10 w-10 opacity-20" />
+                      </AvatarFallback>
+                    </Avatar>
+                    {form.watch("avatarUrl") && (
+                      <div className="absolute -top-1 -right-1 bg-green-500 text-white p-1 rounded-full shadow-md">
+                        <Check className="h-3 w-3" />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="mt-4 flex gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = 'image/*';
-                    input.capture = 'user';
-                    input.onchange = (e) => {
-                      const file = (e.target as HTMLInputElement).files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => form.setValue("avatarUrl", reader.result as string);
-                        reader.readAsDataURL(file);
-                      }
-                    };
-                    input.click();
-                  }}
-                >
-                  <Camera className="mr-2 h-4 w-4" />
-                  Capturar Biometria
-                </Button>
-                {form.watch("avatarUrl") && (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => form.setValue("avatarUrl", "")}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="default" size="sm" onClick={startCamera}>
+                      <Camera className="mr-2 h-4 w-4" /> Abrir Câmera
+                    </Button>
+                    
+                    <label className="cursor-pointer">
+                      <Button type="button" variant="outline" size="sm" asChild>
+                        <span><Upload className="mr-2 h-4 w-4" /> Importar</span>
+                      </Button>
+                      <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
+                    </label>
+
+                    {form.watch("avatarUrl") && (
+                      <Button type="button" variant="ghost" size="sm" onClick={() => form.setValue("avatarUrl", "")}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="relative w-full flex flex-col items-center">
+                  <div className="relative h-48 w-64 bg-black rounded-lg overflow-hidden border-2 border-primary">
+                    <video ref={videoRef} autoPlay playsInline className="h-full w-full object-cover scale-x-[-1]" />
+                    <div className="absolute inset-0 border-[20px] border-black/40 rounded-full pointer-events-none" />
+                  </div>
+                  <canvas ref={canvasRef} className="hidden" />
+                  <div className="mt-4 flex gap-2">
+                    <Button type="button" variant="default" className="bg-green-600 hover:bg-green-700" onClick={takePhoto}>
+                      Capturar Foto
+                    </Button>
+                    <Button type="button" variant="outline" onClick={stopCamera}>
+                      <X className="mr-2 h-4 w-4" /> Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* STATUS E NIVEL DE ACESSO */}
