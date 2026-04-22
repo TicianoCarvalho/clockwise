@@ -7,6 +7,9 @@ export interface Company {
   name: string;
   cnpj: string;
   planLimit?: number;
+  status?: string;
+  plan?: 'soft' | 'plus' | 'prime';
+  paymentDay?: number;
 }
 
 export interface Sector {
@@ -30,7 +33,7 @@ export interface Location {
   tenantId: string;
   latitude?: number;
   longitude?: number;
-  radius?: number; // raio de tolerância para o ponto
+  radius?: number; 
 }
 
 export interface Employee {
@@ -45,10 +48,10 @@ export interface Employee {
   scheduleId?: string;
   scaleId?: string | null;
   admissionDate: string;        
-  terminationDate?: string | null; // Padronizado com a página de listagem
+  terminationDate?: string | null;
   birthDate?: string | null;
-  phone?: string;                // Padronizado (celular)
-  eSocialId?: string;            // Padronizado (matricula esocial)
+  phone?: string;                
+  eSocialId?: string;            
   automaticInterval: boolean;   
   allowMobilePunch: boolean;    
   address?: string;             
@@ -56,6 +59,23 @@ export interface Employee {
   status: 'Ativo' | 'Inativo';
   workModel?: 'standard' | 'hourly';
 }
+
+// --- BUSCAS GLOBAIS (Root Collections) ---
+
+export const getSchedules = async () => {
+  const snap = await adminDb.collection('schedules').get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Schedule[];
+};
+
+export const getSectors = async () => {
+  const snap = await adminDb.collection('sectors').get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Sector[];
+};
+
+export const getScales = async () => {
+  const snap = await adminDb.collection('scales').get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Scale[];
+};
 
 // --- FILIAIS (BRANCHES) ---
 export const getBranches = async (tenantId: string) => {
@@ -65,17 +85,12 @@ export const getBranches = async (tenantId: string) => {
 
 // --- LOCAIS DE MARCAÇÃO (LOCATIONS) ---
 export const getLocations = async (tenantId: string) => {
-  // Busca tanto locais globais quanto específicos do tenant
   const snap = await adminDb.collection('tenants').doc(tenantId).collection('locations').get();
   return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Location[];
 };
 
 // --- FUNCIONÁRIOS (EMPLOYEES) ---
 
-/**
- * Busca funcionários de um tenant específico.
- * Usamos a subcoleção dentro de 'tenants' para performance e segurança.
- */
 export const getEmployees = async (tenantId: string) => {
   const snap = await adminDb
     .collection('tenants')
@@ -85,9 +100,6 @@ export const getEmployees = async (tenantId: string) => {
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Employee[];
 };
 
-/**
- * Adiciona colaborador usando o CPF como ID do documento para evitar duplicidade
- */
 export const addEmployee = async (tenantId: string, data: Partial<Employee>) => {
   const docId = data.cpf ? data.cpf.replace(/\D/g, "") : undefined;
   
@@ -106,9 +118,6 @@ export const addEmployee = async (tenantId: string, data: Partial<Employee>) => 
   return adminDb.collection('tenants').doc(tenantId).collection('employees').add(data);
 };
 
-/**
- * Atualiza o funcionário
- */
 export const updateEmployee = async (tenantId: string, employeeId: string, data: Partial<Employee>) => {
   return adminDb
     .collection('tenants')
@@ -136,11 +145,8 @@ export const addPunch = async (tenantId: string, employeeId: string, punchData: 
     });
 };
 
-/**
- * Busca as últimas marcações do dia para o colaborador (útil para a Dashboard do app)
- */
 export const getTodayPunches = async (tenantId: string, employeeId: string) => {
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0]; 
   const snap = await adminDb
     .collection('tenants')
     .doc(tenantId)
