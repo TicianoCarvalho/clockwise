@@ -1,20 +1,36 @@
 import { adminDb } from './firebase-admin-config';
 
-// --- INTERFACES ATUALIZADAS ---
-export interface Branch {
-  id?: string;
-  tenantId: string;
-  razaoSocial: string;
+// --- INTERFACES ---
+
+export interface Company {
+  id: string;
+  name: string;
   cnpj: string;
-  inscricaoEstadual: string;
-  endereco: {
-    logradouro: string;
-    numero: string;
-    bairro: string;
-    cidade: string;
-    uf: string;
-    cep: string;
-  };
+  planLimit?: number;
+}
+
+export interface Sector {
+  id: string;
+  name: string;
+}
+
+export interface Schedule {
+  id: string;
+  name: string;
+}
+
+export interface Scale {
+  id: string;
+  name: string;
+}
+
+export interface Location {
+  id: string;
+  name: string;
+  tenantId: string;
+  latitude?: number;
+  longitude?: number;
+  radius?: number; // raio de tolerância para o ponto
 }
 
 export interface Employee {
@@ -25,51 +41,115 @@ export interface Employee {
   email?: string;
   tenantId: string;
   branchId?: string;
-  
-  // --- CAMPOS RECUPERADOS (O que estava faltando) ---
-  admissionDate: string;        // Data de admissão
-  resignationDate?: string;     // Data de rescisão
-  phone?: string;               // Celular/WhatsApp
-  eSocialId?: string;           // Cadastro eSocial
-  automaticInterval: boolean;   // Marcação automática no intervalo
-  allowMobilePunch: boolean;    // Localização do ponto / Permissão mobile
-  address?: string;             // Endereço completo
-  avatarUrl?: string;           // Foto do perfil (Base64 ou URL)
+  setor?: string;
+  scheduleId?: string;
+  scaleId?: string | null;
+  admissionDate: string;        
+  terminationDate?: string | null; // Padronizado com a página de listagem
+  birthDate?: string | null;
+  phone?: string;                // Padronizado (celular)
+  eSocialId?: string;            // Padronizado (matricula esocial)
+  automaticInterval: boolean;   
+  allowMobilePunch: boolean;    
+  address?: string;             
+  avatarUrl?: string;           
+  status: 'Ativo' | 'Inativo';
+  workModel?: 'standard' | 'hourly';
 }
 
 // --- FILIAIS (BRANCHES) ---
 export const getBranches = async (tenantId: string) => {
   const snap = await adminDb.collection('branches').where('tenantId', '==', tenantId).get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 };
-
-export const addBranch = async (data: any) => adminDb.collection('branches').add(data);
-export const updateBranch = async (id: string, data: any) => adminDb.collection('branches').doc(id).update(data);
-export const deleteBranch = async (id: string) => adminDb.collection('branches').doc(id).delete();
 
 // --- LOCAIS DE MARCAÇÃO (LOCATIONS) ---
 export const getLocations = async (tenantId: string) => {
-  const snap = await adminDb.collection('locations').where('tenantId', '==', tenantId).get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-};
-
-export const addLocation = async (data: any) => {
-  return adminDb.collection('locations').add(data);
+  // Busca tanto locais globais quanto específicos do tenant
+  const snap = await adminDb.collection('tenants').doc(tenantId).collection('locations').get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Location[];
 };
 
 // --- FUNCIONÁRIOS (EMPLOYEES) ---
-// Função atualizada para garantir que o front-end receba os novos campos
+
+/**
+ * Busca funcionários de um tenant específico.
+ * Usamos a subcoleção dentro de 'tenants' para performance e segurança.
+ */
 export const getEmployees = async (tenantId: string) => {
-  const snap = await adminDb.collectionGroup('employees')
-    .where('tenantId', '==', tenantId)
+  const snap = await adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('employees')
     .get();
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Employee[];
 };
 
-export const addEmployee = async (tenantId: string, data: any) => {
+/**
+ * Adiciona colaborador usando o CPF como ID do documento para evitar duplicidade
+ */
+export const addEmployee = async (tenantId: string, data: Partial<Employee>) => {
+  const docId = data.cpf ? data.cpf.replace(/\D/g, "") : undefined;
+  
+  if (docId) {
+    return adminDb
+      .collection('tenants')
+      .doc(tenantId)
+      .collection('employees')
+      .doc(docId)
+      .set({
+        ...data,
+        createdAt: new Date().toISOString()
+      });
+  }
+  
   return adminDb.collection('tenants').doc(tenantId).collection('employees').add(data);
 };
 
-export const updateEmployee = async (tenantId: string, employeeId: string, data: any) => {
-  return adminDb.collection('tenants').doc(tenantId).collection('employees').doc(employeeId).update(data);
+/**
+ * Atualiza o funcionário
+ */
+export const updateEmployee = async (tenantId: string, employeeId: string, data: Partial<Employee>) => {
+  return adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('employees')
+    .doc(employeeId)
+    .update({
+      ...data,
+      updatedAt: new Date().toISOString()
+    });
+};
+
+// --- MARCAÇÕES DE PONTO (PUNCHES) ---
+
+export const addPunch = async (tenantId: string, employeeId: string, punchData: any) => {
+  return adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('employees')
+    .doc(employeeId)
+    .collection('punches')
+    .add({
+      ...punchData,
+      serverTimestamp: new Date().toISOString()
+    });
+};
+
+/**
+ * Busca as últimas marcações do dia para o colaborador (útil para a Dashboard do app)
+ */
+export const getTodayPunches = async (tenantId: string, employeeId: string) => {
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const snap = await adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('employees')
+    .doc(employeeId)
+    .collection('punches')
+    .where('date', '==', today)
+    .orderBy('serverTimestamp', 'asc')
+    .get();
+    
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };

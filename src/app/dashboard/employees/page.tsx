@@ -45,7 +45,7 @@ import { Badge } from "@/components/ui/badge";
 // Firebase Imports
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
-import { collection, doc, setDoc, updateDoc, query } from "firebase/firestore";
+import { collection, doc, setDoc, updateDoc, query, where } from "firebase/firestore";
 
 export default function EmployeesPage() {
   const { toast } = useToast();
@@ -53,381 +53,278 @@ export default function EmployeesPage() {
   const { userRole, tenantId } = useAuthContext();
   const [error, setError] = useState<string | null>(null);
   
-  // 2. Fetch tenants for master user reactively
-  const masterTenantsQuery = useMemoFirebase(() => 
-    (firestore && userRole === 'master') ? query(collection(firestore, 'tenants')) : null, 
-  [firestore, userRole]);
-  const { data: tenants, isLoading: tenantsLoading } = useCollection<Company>(masterTenantsQuery);
-
-  // 3. Set selected tenant for master user
-  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
-  useEffect(() => {
-    if (userRole === 'master' && tenants && tenants.length > 0 && !selectedTenantId) {
-        setSelectedTenantId(tenants[0].id);
-    }
-  }, [userRole, tenants, selectedTenantId]);
-
-  // 4. Determine final tenantId for queries
-  const finalTenantId = userRole === 'master' ? selectedTenantId : tenantId;
-  
-  // 5. Fetch tenant-specific and global data
-  const employeesQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'employees') : null, [firestore, finalTenantId]);
-  const { data: employeesData, isLoading: employeesLoading, error: employeesError } = useCollection<Employee>(employeesQuery);
-  const employees = useMemo(() => employeesData || [], [employeesData]);
-
-  // --- Lógica de Controle de Vagas ---
-  const activeEmployeesCount = useMemo(() => {
-    return employees.filter(emp => {
-      if (!emp.terminationDate) return true;
-      // Considera ativo se a data de rescisão for futura
-      return new Date(emp.terminationDate) > new Date();
-    }).length;
-  }, [employees]);
-
-  const planLimit = 20; // Pode ser substituído por t.planLimit vindo do tenant
-  const isLimitReached = activeEmployeesCount >= planLimit;
-  // -----------------------------------
-
-  const locationsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, [firestore, finalTenantId]);
-  const { data: locationsData } = useCollection<Location>(locationsQuery);
-  const locations = useMemo(() => locationsData || [], [locationsData]);
-  
-  const sectorsQuery = useMemoFirebase(() => (firestore && userRole) ? collection(firestore, 'sectors') : null, [firestore, userRole]);
-  const { data: sectorsData } = useCollection<Sector>(sectorsQuery);
-  const sectors = useMemo(() => sectorsData || [], [sectorsData]);
-
-  const schedulesQuery = useMemoFirebase(() => (firestore && userRole) ? collection(firestore, 'schedules') : null, [firestore, userRole]);
-  const { data: schedulesData } = useCollection<Schedule>(schedulesQuery);
-  const schedules = useMemo(() => schedulesData || [], [schedulesData]);
-
-  const scalesQuery = useMemoFirebase(() => (firestore && userRole) ? collection(firestore, 'scales') : null, [firestore, userRole]);
-  const { data: scalesData } = useCollection<Scale>(scalesQuery);
-  const scales = useMemo(() => scalesData || [], [scalesData]);
-  
-  const isLoading = employeesLoading || tenantsLoading || !userRole;
-  
-  useEffect(() => {
-    if (employeesError) {
-      setError('Falha ao carregar a lista de colaboradores.');
-      console.error(employeesError);
-    }
-  }, [employeesError]);
-
+  // 1. Estados de Diálogo e Paginação
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
 
-  const totalPages = Math.ceil(employees.length / itemsPerPage);
-  const paginatedEmployees = employees.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // 2. Fetch de Empresas (Para Master)
+  const masterTenantsQuery = useMemoFirebase(() => 
+    (firestore && userRole === 'master') ? query(collection(firestore, 'tenants')) : null, 
+  [firestore, userRole]);
+  const { data: tenants, isLoading: tenantsLoading } = useCollection<Company>(masterTenantsQuery);
+
+  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   
-  const handleSubmitEmployee = async (data: Omit<Employee, 'id' | 'status'>) => {
+  useEffect(() => {
+    if (userRole === 'master' && tenants?.length && !selectedTenantId) {
+        setSelectedTenantId(tenants[0].id);
+    }
+  }, [userRole, tenants, selectedTenantId]);
+
+  const finalTenantId = userRole === 'master' ? selectedTenantId : tenantId;
+  
+  // 3. Fetch de Dados do Tenant Selecionado
+  const employeesQuery = useMemoFirebase(() => 
+    (firestore && finalTenantId) ? collection(firestore, 'tenants', finalTenantId, 'employees') : null, 
+  [firestore, finalTenantId]);
+  
+  const { data: employeesData, isLoading: employeesLoading, error: employeesError } = useCollection<Employee>(employeesQuery);
+  const employees = useMemo(() => employeesData || [], [employeesData]);
+
+  // --- Lógica de Controle de Vagas ---
+  const activeEmployeesCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return employees.filter(emp => {
+      if (!emp.terminationDate) return emp.status !== 'Inativo';
+      return new Date(emp.terminationDate) >= today;
+    }).length;
+  }, [employees]);
+
+  const planLimit = 20; 
+  const isLimitReached = activeEmployeesCount >= planLimit;
+
+  // 4. Queries de Apoio (Locations, Sectors, etc.)
+  const locationsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, [firestore, finalTenantId]);
+  const { data: locations } = useCollection<Location>(locationsQuery);
+  
+  const sectorsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'sectors') : null, [firestore]);
+  const { data: sectors } = useCollection<Sector>(sectorsQuery);
+
+  const schedulesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'schedules') : null, [firestore]);
+  const { data: schedules } = useCollection<Schedule>(schedulesQuery);
+
+  const scalesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'scales') : null, [firestore]);
+  const { data: scales } = useCollection<Scale>(scalesQuery);
+  
+  const isLoading = employeesLoading || (userRole === 'master' && tenantsLoading);
+  
+  // 5. Paginação
+  const totalPages = Math.ceil(employees.length / itemsPerPage);
+  const paginatedEmployees = useMemo(() => {
+    return employees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  }, [employees, currentPage, itemsPerPage]);
+
+  // 6. Handlers de Ação
+  const handleSubmitEmployee = async (data: any) => {
     if (!firestore || !finalTenantId) return;
 
     const isEditing = !!editingEmployee;
     
-    // Verificação de Limite de Vagas (Apenas para novos cadastros)
+    // Bloqueia apenas se for novo e exceder o limite
     if (!isEditing && isLimitReached) {
       toast({ 
         variant: "destructive", 
         title: "Limite atingido", 
-        description: `O plano desta empresa permite apenas ${planLimit} colaboradores ativos.` 
+        description: `Seu plano atingiu o limite de ${planLimit} funcionários ativos.` 
       });
       return;
     }
 
-    // Determine status based on termination date
-    const terminationDate = (data as any).terminationDate;
-    const newStatus = (terminationDate && new Date(terminationDate) < new Date()) ? 'Inativo' : 'Ativo';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const termDate = data.terminationDate ? new Date(data.terminationDate) : null;
+    const newStatus = (termDate && termDate < today) ? 'Inativo' : 'Ativo';
     
-    const employeeData = { ...data, status: newStatus };
+    const employeeData = { 
+        ...data, 
+        status: newStatus,
+        tenantId: finalTenantId,
+        updatedAt: new Date().toISOString()
+    };
 
     try {
       if (isEditing && editingEmployee?.id) {
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', editingEmployee.id);
           await updateDoc(docRef, employeeData);
       } else {
-          // Verificação de Duplicidade por CPF (ID Único)
-          const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', employeeData.cpf);
+          // Usa o CPF limpo (sem pontos/traços) como ID se preferir, ou deixe o Firebase gerar
+          const docId = data.cpf.replace(/\D/g, "");
+          const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', docId);
           
-          // Verifica no estado local se o CPF já existe para evitar sobrescrita indesejada
-          const existingEmp = employees.find(e => e.cpf === employeeData.cpf);
-          if (existingEmp) {
-            toast({ 
-              variant: "destructive", 
-              title: "CPF já cadastrado", 
-              description: `O CPF ${employeeData.cpf} já pertence a ${existingEmp.name}.` 
-            });
+          if (employees.some(e => e.cpf === data.cpf)) {
+            toast({ variant: "destructive", title: "CPF já cadastrado" });
             return;
           }
-
           await setDoc(docRef, employeeData);
       }
       
-      toast({ title: `Colaborador ${isEditing ? 'atualizado' : 'adicionado'}!`, description: `"${data.name}" foi salvo com sucesso.` });
+      toast({ title: "Sucesso!", description: "Dados salvos corretamente." });
       setIsDialogOpen(false);
       setEditingEmployee(null);
-
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Erro ao salvar", description: error.message });
-      console.error("Error saving employee:", error);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Erro ao salvar", description: err.message });
     }
   };
 
-  const handleOpenDialogForEdit = (employee: Employee) => {
-    setEditingEmployee(employee);
-    setIsDialogOpen(true);
-  };
-  
-  const handleOpenDialogForAdd = () => {
-    if (!finalTenantId) {
-      toast({ variant: 'destructive', title: 'Nenhuma empresa selecionada', description: 'Selecione uma empresa antes de adicionar um colaborador.' });
-      return;
-    }
-    setEditingEmployee(null);
-    setIsDialogOpen(true);
-  };
-
-  const handleOpenConfirmDeleteDialog = (employee: Employee) => {
-    setDeletingEmployee(employee);
-    setIsConfirmDeleteDialogOpen(true);
-  };
-
-  const handleDeleteEmployeeConfirm = async () => {
-    if (!deletingEmployee) return;
-    toast({ variant: "destructive", title: "Ação Bloqueada", description: "A exclusão de funcionários foi desativada para garantir a integridade dos dados." });
-    setIsConfirmDeleteDialogOpen(false);
-    setDeletingEmployee(null);
-  };
-
-  const handleOpenResetPasswordDialog = (employee: Employee) => {
-    toast({
-        variant: "destructive",
-        title: "Funcionalidade Desativada",
-        description: "O reset de senha por administrador foi desativado na arquitetura atual.",
-    });
-  };
-
-  const handleBulkImport = async (newEmployees: Employee[]) => {
-    toast({ title: "Funcionalidade em desenvolvimento", description: "A importação em massa precisa ser atualizada para o novo sistema." });
-  };
-
-  const handleItemsPerPageChange = (value: string) => {
-    setItemsPerPage(Number(value));
-    setCurrentPage(1);
-  };
-
-  const goToPreviousPage = () => {
-    setCurrentPage((prev) => (prev > 1 ? prev - 1 : prev));
-  };
-
-  const goToNextPage = () => {
-    setCurrentPage((prev) => (prev < totalPages && prev * itemsPerPage < employees.length ? prev + 1 : prev));
-  };
-  
   return (
-    <>
-      <div className="flex flex-col h-full">
-        <header className="flex items-center justify-between mb-6">
-            <div>
-                <CardTitle className="flex items-center gap-2">
-                    <Users className="h-6 w-6"/>
-                    Painel de Colaboradores
-                </CardTitle>
-                <CardDescription>Adicione, edite e gerencie seus colaboradores.</CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Importar
-                </Button>
-                <Button onClick={handleOpenDialogForAdd}>
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Adicionar Funcionário
-                </Button>
-            </div>
-        </header>
-
-        {userRole === 'master' && (
-            <Card className="mb-6">
-            <CardHeader>
-                <CardTitle>Seleção de Empresa (Master)</CardTitle>
-                <CardDescription>Gerencie os dados da empresa selecionada.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                {tenantsLoading ? (
-                  <p className='text-sm text-muted-foreground'>Carregando empresas...</p>
-                ) : tenants && tenants.length > 0 ? (
-                    <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Selecione uma empresa..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {tenants.map(t => <SelectItem key={t.id} value={t.id}>{t.name} (CNPJ: {t.cnpj})</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                ) : (
-                    <p className='text-sm text-muted-foreground'>Nenhuma empresa encontrada.</p>
-                )}
-            </CardContent>
-            </Card>
-        )}
-        
-        <div className="flex-grow">
-            {isLoading ? (
-                <div className="flex items-center justify-center h-full">
-                    <Loader2 className="h-16 w-16 animate-spin text-muted-foreground" />
-                </div>
-            ) : error ? (
-                <div className="flex flex-col items-center justify-center h-full rounded-lg border-2 border-dashed border-destructive text-destructive">
-                    <AlertTriangle className="h-16 w-16" />
-                    <p className="mt-4 text-lg font-semibold">Erro ao Carregar Dados</p>
-                    <p className="text-center max-w-md">{error}</p>
-                </div>
-            ) : !finalTenantId ? (
-                <div className="flex flex-col items-center justify-center h-full rounded-lg border-2 border-dashed">
-                    <Users className="h-16 w-16 text-muted-foreground" />
-                    <p className="mt-4 text-lg font-semibold">Nenhuma empresa selecionada</p>
-                    <p className="text-muted-foreground">{userRole === 'master' ? 'Selecione uma empresa acima para ver os colaboradores.' : 'Sua conta não parece estar vinculada a uma empresa.'}</p>
-                </div>
-            ) : paginatedEmployees.length === 0 ? (
-                 <div className="flex flex-col items-center justify-center h-full rounded-lg border-2 border-dashed">
-                    <Users className="h-16 w-16 text-muted-foreground" />
-                    <p className="mt-4 text-lg font-semibold">Nenhum colaborador encontrado</p>
-                    <p className="text-muted-foreground">Comece adicionando um novo funcionário para a empresa selecionada.</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {paginatedEmployees.map((employee, index) => (
-                        <Card key={employee.id || `${employee.matricula}-${index}`} className="flex flex-col items-center justify-center text-center p-6 relative">
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7">
-                                        <EllipsisVertical className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => handleOpenDialogForEdit(employee)}>
-                                        <Edit className="mr-2 h-4 w-4" />
-                                        <span>Editar</span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleOpenResetPasswordDialog(employee)}>
-                                        <KeyRound className="mr-2 h-4 w-4" />
-                                        <span>Resetar Senha</span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onClick={() => handleOpenConfirmDeleteDialog(employee)} className="text-destructive focus:text-destructive">
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        <span>Remover</span>
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-
-                            {employee.status === 'Inativo' && (
-                                <Badge variant="outline" className="absolute top-2 left-2 bg-destructive text-destructive-foreground">Inativo</Badge>
-                            )}
-
-                            <Avatar className="h-24 w-24 mb-4 border-2 border-primary/20">
-                                <AvatarImage src={employee.avatarUrl || undefined} data-ai-hint="profile picture" alt={employee.name} />
-                                <AvatarFallback>
-                                    {employee.name ? employee.name.slice(0, 2).toUpperCase() : <User className="h-8 w-8" />}
-                                </AvatarFallback>
-                            </Avatar>
-                            <p className="font-bold text-lg">{employee.name}</p>
-                            <p className="text-sm text-muted-foreground capitalize">{employee.role}</p>
-                            <p className="text-xs text-muted-foreground mt-1">Matrícula: {employee.matricula}</p>
-                        </Card>
-                    ))}
-                </div>
-            )}
+    <div className="flex flex-col h-full space-y-6">
+      <header className="flex items-center justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-2xl">
+            <Users className="h-7 w-7 text-primary"/>
+            Colaboradores
+          </CardTitle>
+          <CardDescription>Gestão centralizada de funcionários e acessos.</CardDescription>
         </div>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" /> Importar
+          </Button>
+          <Button onClick={() => { setEditingEmployee(null); setIsDialogOpen(true); }}>
+            <PlusCircle className="mr-2 h-4 w-4" /> Novo Funcionário
+          </Button>
+        </div>
+      </header>
 
-        <footer className="flex items-center justify-between py-4 mt-auto border-t">
-            <div className="text-sm text-muted-foreground">
-                Total de {employees.length} funcionários ({activeEmployeesCount} ativos / limite {planLimit}).
-            </div>
+      {userRole === 'master' && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">Itens por página</p>
-                    <Select value={`${itemsPerPage}`} onValueChange={handleItemsPerPageChange}>
-                        <SelectTrigger className="h-8 w-[70px]">
-                            <SelectValue placeholder={`${itemsPerPage}`} />
-                        </SelectTrigger>
-                        <SelectContent side="top">
-                            <SelectItem value="12">12</SelectItem>
-                            <SelectItem value="24">24</SelectItem>
-                            <SelectItem value="36">36</SelectItem>
-                            <SelectItem value="48">48</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="flex w-[120px] items-center justify-center text-sm font-medium">
-                    Página {currentPage} de {totalPages > 0 ? totalPages : 1}
-                </div>
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={goToPreviousPage}
-                        disabled={currentPage === 1}
-                    >
-                        <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={goToNextPage}
-                        disabled={currentPage === totalPages || totalPages === 0}
-                    >
-                        <ChevronRight className="h-4 w-4" />
-                    </Button>
-                </div>
+               <span className="text-sm font-bold flex items-center gap-2"><KeyRound className="h-4 w-4"/> Empresa Alvo:</span>
+               <Select value={selectedTenantId} onValueChange={setSelectedTenantId}>
+                  <SelectTrigger className="w-[300px] bg-background">
+                    <SelectValue placeholder="Selecione a empresa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants?.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  </SelectContent>
+               </Select>
             </div>
-        </footer>
+          </CardContent>
+        </Card>
+      )}
+      
+      <div className="flex-grow">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="text-muted-foreground animate-pulse">Sincronizando com a nuvem...</p>
+          </div>
+        ) : paginatedEmployees.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-80 border-2 border-dashed rounded-xl bg-muted/30">
+            <Users className="h-16 w-16 text-muted-foreground/50 mb-4" />
+            <p className="text-xl font-medium text-muted-foreground">Nenhum registro encontrado</p>
+            <Button variant="link" onClick={() => setIsDialogOpen(true)}>Adicionar o primeiro</Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {paginatedEmployees.map((emp) => (
+              <Card key={emp.id} className={`group hover:shadow-lg transition-all ${emp.status === 'Inativo' ? 'opacity-75 grayscale-[0.5]' : ''}`}>
+                <CardContent className="p-6 relative">
+                  <div className="absolute top-3 right-3">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8"><EllipsisVertical className="h-4 w-4" /></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => { setEditingEmployee(emp); setIsDialogOpen(true); }}>
+                          <Edit className="mr-2 h-4 w-4" /> Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setIsConfirmDeleteDialogOpen(true)} className="text-destructive">
+                          <Trash2 className="mr-2 h-4 w-4" /> Remover
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div className="flex flex-col items-center">
+                    <div className="relative">
+                      <Avatar className="h-20 w-20 border-4 border-background shadow-md">
+                        <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                        <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                          {emp.name?.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      {emp.status === 'Inativo' && (
+                        <Badge className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-destructive text-[10px]">INATIVO</Badge>
+                      )}
+                    </div>
+                    <h3 className="mt-4 font-bold text-center line-clamp-1">{emp.name}</h3>
+                    <p className="text-xs text-muted-foreground font-mono mt-1">{emp.cpf}</p>
+                    <div className="mt-4 flex flex-wrap justify-center gap-1">
+                      <Badge variant="secondary" className="text-[10px]">{emp.setor || 'Sem Setor'}</Badge>
+                      <Badge variant="outline" className="text-[10px]">Mat: {emp.matricula}</Badge>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
+      <footer className="flex items-center justify-between pt-6 border-t">
+        <div className="flex flex-col">
+          <p className="text-sm font-medium">Total: {employees.length} registros</p>
+          <div className="flex items-center gap-2 mt-1">
+            <div className="h-2 w-24 bg-muted rounded-full overflow-hidden">
+               <div 
+                className={`h-full ${isLimitReached ? 'bg-destructive' : 'bg-primary'} transition-all`} 
+                style={{ width: `${Math.min((activeEmployeesCount / planLimit) * 100, 100)}%` }}
+               />
+            </div>
+            <span className="text-[10px] text-muted-foreground">{activeEmployeesCount}/{planLimit} Vagas Ativas</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm px-4">Pág. {currentPage}</span>
+          <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage >= totalPages}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </footer>
+
+      {/* Modais */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <EmployeeForm 
+        {isDialogOpen && (
+          <EmployeeForm 
             employee={editingEmployee}
             onSubmit={handleSubmitEmployee}
             locations={locations || []}
             sectors={sectors || []}
             schedules={schedules || []}
             scales={scales || []}
+            activeCount={activeEmployeesCount}
             isLimitReached={isLimitReached}
-        />
-      </Dialog>
-      
-       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-          <EmployeeImportDialog 
-              onImport={handleBulkImport}
-              onClose={() => setIsImportDialogOpen(false)}
           />
+        )}
       </Dialog>
-      
+
       <AlertDialog open={isConfirmDeleteDialogOpen} onOpenChange={setIsConfirmDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
+            <AlertDialogTitle>Ação Restrita</AlertDialogTitle>
             <AlertDialogDescription>
-              A exclusão de funcionários foi permanentemente desativada. Use a edição para inativar um funcionário.
+              Para manter a conformidade legal e o histórico de pontos, funcionários não podem ser excluídos. 
+              Por favor, defina uma <strong>Data de Rescisão</strong> no cadastro para inativá-lo.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Voltar</AlertDialogCancel>
             <AlertDialogAction onClick={() => setIsConfirmDeleteDialogOpen(false)}>Entendi</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }
