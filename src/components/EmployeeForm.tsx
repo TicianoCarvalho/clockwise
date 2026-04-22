@@ -9,6 +9,7 @@ import { format, parseISO } from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -92,7 +93,9 @@ export function EmployeeForm({
 }: EmployeeFormProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isCameraDialogOpen, setIsCameraDialogOpen] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
   
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -125,6 +128,26 @@ export function EmployeeForm({
   const avatarUrl = form.watch("avatarUrl");
   const name = form.watch("name");
 
+  // Gerenciamento da Câmera
+  useEffect(() => {
+    async function setupCamera() {
+      if (isCameraDialogOpen) {
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+          setStream(s);
+          if (videoRef.current) videoRef.current.srcObject = s;
+        } catch (err) {
+          toast({ variant: "destructive", title: "Erro na Câmera", description: "Não foi possível acessar a câmera." });
+          setIsCameraDialogOpen(false);
+        }
+      } else {
+        stream?.getTracks().forEach(track => track.stop());
+        setStream(null);
+      }
+    }
+    setupCamera();
+  }, [isCameraDialogOpen]);
+
   useEffect(() => {
     if (employee) {
       form.reset({
@@ -156,151 +179,159 @@ export function EmployeeForm({
   };
 
   return (
-    <DialogContent className="sm:max-w-2xl">
-      <DialogHeader>
-        <DialogTitle>{employee ? "Editar Funcionário" : "Adicionar Funcionário"}</DialogTitle>
-        <DialogDescription>
-          {employee ? "Edite as informações abaixo." : "Preencha os dados para o novo cadastro."}
-        </DialogDescription>
-      </DialogHeader>
+    <>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{employee ? "Editar Funcionário" : "Adicionar Funcionário"}</DialogTitle>
+        </DialogHeader>
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleFormSubmit)}>
-          <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-4">
-            
-            {/* Foto e Biometria */}
-            <FormField
-              control={form.control}
-              name="avatarUrl"
-              render={() => (
-                <FormItem className="flex flex-col items-center mb-6">
-                  <Avatar className="h-24 w-24">
-                    <AvatarImage src={avatarUrl || undefined} />
-                    <AvatarFallback>{name ? name.slice(0, 2).toUpperCase() : <User className="h-8 w-8" />}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex gap-2 pt-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setIsCameraDialogOpen(true)}><Camera className="mr-2 h-4 w-4" />Biometria</Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="mr-2 h-4 w-4" />Upload</Button>
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={() => {}} />
-                  </div>
-                </FormItem>
-              )}
-            />
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleFormSubmit)}>
+            <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-4">
+              
+              <FormField
+                control={form.control}
+                name="avatarUrl"
+                render={() => (
+                  <FormItem className="flex flex-col items-center mb-6">
+                    <Avatar className="h-24 w-24">
+                      <AvatarImage src={avatarUrl || undefined} />
+                      <AvatarFallback>{name ? name.slice(0, 2).toUpperCase() : <User className="h-8 w-8" />}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex gap-2 pt-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setIsCameraDialogOpen(true)}>
+                        <Camera className="mr-2 h-4 w-4" /> Biometria
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                        <Upload className="mr-2 h-4 w-4" /> Upload
+                      </Button>
+                      <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={() => {}} />
+                    </div>
+                  </FormItem>
+                )}
+              />
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="matricula" render={({ field }) => (
-                <FormItem><FormLabel>Matrícula*</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="name" render={({ field }) => (
-                <FormItem><FormLabel>Nome Completo*</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
+              {/* Grid de Dados Pessoais */}
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="matricula" render={({ field }) => (
+                  <FormItem><FormLabel>Matrícula*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="name" render={({ field }) => (
+                  <FormItem><FormLabel>Nome Completo*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                )} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="cpf" render={({ field }) => (
+                  <FormItem><FormLabel>CPF*</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} /></FormControl></FormItem>
+                )} />
+                <FormField control={form.control} name="celular" render={({ field }) => (
+                  <FormItem><FormLabel>Celular / WhatsApp*</FormLabel><FormControl><Input placeholder="(00) 00000-0000" {...field} /></FormControl></FormItem>
+                )} />
+              </div>
+
+              <Separator />
+              <p className="text-sm font-medium text-muted-foreground">Dados Contratuais e eSocial</p>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="admissionDate" render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Data de Admissão</FormLabel>
+                    <DatePicker date={field.value || undefined} setDate={field.onChange} />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="esocialMatricula" render={({ field }) => (
+                  <FormItem><FormLabel>ID eSocial*</FormLabel><FormControl><Input placeholder="Código eSocial" {...field} /></FormControl></FormItem>
+                )} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="setor" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Setor</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                      <SelectContent>{sectors.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="localTrabalho" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Local de Trabalho</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                      <SelectContent>{locations.map(l => <SelectItem key={l.id} value={l.name}>{l.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="scheduleId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Horário Base</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                      <SelectContent>{schedules.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="scaleId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Escala</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Sem escala" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="__NONE__">Nenhuma</SelectItem>
+                        {scales.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+              </div>
+
+              <Separator />
+              <div className="grid grid-cols-1 gap-2">
+                <FormField control={form.control} name="allowMobilePunch" render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div><FormLabel>Permitir Ponto via App</FormLabel></div>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="automaticInterval" render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div><FormLabel>Intervalo Automático</FormLabel></div>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )} />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="cpf" render={({ field }) => (
-                <FormItem><FormLabel>CPF*</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="celular" render={({ field }) => (
-                <FormItem><FormLabel>Celular / WhatsApp*</FormLabel><FormControl><Input placeholder="(00) 00000-0000" {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
+            <DialogFooter className="pt-4 border-t">
+              <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
+              <Button type="submit" disabled={!employee && isLimitReached}>
+                {employee ? "Salvar Alterações" : "Cadastrar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+
+      {/* DIÁLOGO DA CÂMERA (ADICIONADO) */}
+      <Dialog open={isCameraDialogOpen} onOpenChange={setIsCameraDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Biometria Facial</DialogTitle></DialogHeader>
+          <div className="flex flex-col items-center space-y-4">
+            <div className="relative w-64 h-64 bg-black rounded-full overflow-hidden border-4 border-primary">
+              <video ref={videoRef} autoPlay playsInline className="object-cover w-full h-full scale-x-[-1]" />
             </div>
-
-            <Separator />
-            <p className="text-sm font-medium text-muted-foreground">Dados Contratuais e eSocial</p>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="admissionDate" render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Data de Admissão</FormLabel>
-                  <DatePicker date={field.value || undefined} setDate={field.onChange} />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="esocialMatricula" render={({ field }) => (
-                <FormItem><FormLabel>ID eSocial*</FormLabel><FormControl><Input placeholder="Código eSocial" {...field} /></FormControl><FormMessage /></FormItem>
-              )} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="setor" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Setor</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                    <SelectContent>{sectors.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="localTrabalho" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Local de Trabalho</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Ex: Depósito" /></SelectTrigger></FormControl>
-                    <SelectContent>{locations.map(l => <SelectItem key={l.id} value={l.name}>{l.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="scheduleId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Horário Base</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                    <SelectContent>{schedules.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="scaleId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Escala (Revezamento)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Sem escala fixa" /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="__NONE__">Nenhuma (Horário Fixo)</SelectItem>
-                      {scales.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )} />
-            </div>
-
-            <Separator />
-            <p className="text-sm font-medium text-muted-foreground">Configurações de Ponto Mobile</p>
-
-            <div className="grid grid-cols-1 gap-2">
-              <FormField control={form.control} name="allowMobilePunch" render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-md border p-3">
-                  <div>
-                    <FormLabel className="text-base">Permitir Ponto via App</FormLabel>
-                    <FormDescription>Ativa GPS e Reconhecimento Facial</FormDescription>
-                  </div>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                </FormItem>
-              )} />
-
-              <FormField control={form.control} name="automaticInterval" render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-md border p-3">
-                  <div>
-                    <FormLabel className="text-base">Intervalo Automático</FormLabel>
-                    <FormDescription>O sistema abate o almoço automaticamente</FormDescription>
-                  </div>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                </FormItem>
-              )} />
+            <div className="flex gap-2">
+              <Button onClick={() => setIsCameraDialogOpen(false)}>Capturar</Button>
+              <Button variant="secondary" onClick={() => setIsCameraDialogOpen(false)}>Fechar</Button>
             </div>
           </div>
-
-          <DialogFooter className="pt-4 border-t">
-            <DialogClose asChild>
-              <Button type="button" variant="outline">Cancelar</Button>
-            </DialogClose>
-            <Button type="submit" disabled={!employee && isLimitReached}>
-              {employee ? "Salvar Alterações" : "Cadastrar Colaborador"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </Form>
-    </DialogContent>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
