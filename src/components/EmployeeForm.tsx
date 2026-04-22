@@ -21,7 +21,6 @@ import {
   FormField,
   FormItem,
   FormLabel,
-  FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
@@ -53,12 +52,12 @@ const formSchema = z.object({
   matricula: z.string().min(1, "A matrícula é obrigatória."),
   name: z.string().min(1, "O nome é obrigatório."),
   password: z.string().default(""),
-  role: z.enum(['admin', 'supervisor', 'usuario']).default('usuario'),
+  role: z.string().default("usuario"), // admin, supervisor, usuario
   scaleId: z.string().optional().nullable(),
   scaleStartDate: z.date().optional().nullable(),
   scheduleId: z.string().min(1, "O horário é obrigatório."),
   setor: z.string().min(1, "O setor é obrigatório."),
-  status: z.boolean().default(true),
+  status: z.boolean().default(true), // Mapeia para "Ativo" / "Inativo"
   terminationDate: z.date().optional().nullable(),
   workModel: z.string().default("standard"),
 });
@@ -120,9 +119,9 @@ export function EmployeeForm({
         ...employee,
         status: (employee as any).status === "Ativo",
         admissionDate: employee.admissionDate ? parseISO(employee.admissionDate) : null,
-        birthDate: (employee as any).birthDate ? parseISO((employee as any).birthDate) : null,
-        scaleStartDate: (employee as any).scaleStartDate ? parseISO((employee as any).scaleStartDate) : null,
+        birthDate: (employee as any).birthDate ? parseISO((employee as any).birthDate as string) : null,
         scaleId: employee.scaleId || "",
+        role: (employee as any).role || "usuario"
       });
     }
   }, [employee, form]);
@@ -133,6 +132,7 @@ export function EmployeeForm({
       status: data.status ? "Ativo" : "Inativo",
       admissionDate: data.admissionDate ? format(data.admissionDate, 'yyyy-MM-dd') : null,
       birthDate: data.birthDate ? format(data.birthDate, 'yyyy-MM-dd') : null,
+      scaleId: data.scaleId === "" || data.scaleId === "none" ? null : data.scaleId,
     };
     onSubmit(payload);
   };
@@ -143,39 +143,37 @@ export function EmployeeForm({
     <DialogContent className="sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>{employee ? "Editar Funcionário" : "Adicionar Funcionário"}</DialogTitle>
-        <DialogDescription>Configure os dados e permissões de ponto do colaborador.</DialogDescription>
+        <DialogDescription>Todos os campos obrigatórios para o eSocial e controle de ponto.</DialogDescription>
       </DialogHeader>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(handleFormSubmit)}>
-          <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-2">
+          <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
             
-            {/* SEÇÃO 1: PERMISSÕES DE PONTO (O QUE TINHA SUMIDO) */}
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 space-y-4">
-              <h4 className="text-sm font-semibold text-blue-900 uppercase tracking-wider">Regras de Acesso e Ponto</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="allowMobilePunch" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between p-2 bg-white rounded border">
-                    <div className="space-y-0.5">
-                      <FormLabel>Ponto Mobile</FormLabel>
-                    </div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="automaticInterval" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between p-2 bg-white rounded border">
-                    <div className="space-y-0.5">
-                      <FormLabel>Intervalo Autom.</FormLabel>
-                    </div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  </FormItem>
-                )} />
-              </div>
+            {/* STATUS E NIVEL DE ACESSO */}
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border">
+              <FormField control={form.control} name="status" render={({ field }) => (
+                <FormItem className="flex items-center justify-between space-y-0">
+                  <FormLabel className="font-bold">Colaborador Ativo</FormLabel>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="role" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nível de Acesso</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o acesso" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="supervisor">Supervisor</SelectItem>
+                      <SelectItem value="usuario">Usuário Comum (Colaborador)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
             </div>
 
-            <Separator />
-
-            {/* SEÇÃO 2: DADOS BÁSICOS */}
+            {/* DADOS PESSOAIS */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="name" render={({ field }) => (
                 <FormItem><FormLabel>Nome Completo*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
@@ -185,16 +183,43 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* SEÇÃO 3: ALOCAÇÃO (SETOR E LOCAL) */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem><FormLabel>Email</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+              )} />
+              <FormField control={form.control} name="celular" render={({ field }) => (
+                <FormItem><FormLabel>Celular</FormLabel><FormControl><Input placeholder="(85) 9..." {...field} /></FormControl></FormItem>
+              )} />
+            </div>
+
+            <Separator />
+
+            {/* REGRAS DE PONTO */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="allowMobilePunch" render={({ field }) => (
+                <FormItem className="flex items-center justify-between p-2 bg-white rounded border">
+                  <FormLabel className="text-xs">Permitir Ponto Mobile</FormLabel>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="automaticInterval" render={({ field }) => (
+                <FormItem className="flex items-center justify-between p-2 bg-white rounded border">
+                  <FormLabel className="text-xs">Intervalo Automático</FormLabel>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+            </div>
+
+            {/* ALOCAÇÃO */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="localTrabalho" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Local de Trabalho</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o Local" /></SelectTrigger></FormControl>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {locations.filter(i => i.id).map(i => (
-                        <SelectItem key={i.id} value={getSafeLabel(i)}>{getSafeLabel(i)}</SelectItem>
+                      {locations.filter(l => l.id).map(l => (
+                        <SelectItem key={l.id} value={getSafeLabel(l)}>{getSafeLabel(l)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -204,10 +229,10 @@ export function EmployeeForm({
                 <FormItem>
                   <FormLabel>Setor</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o Setor" /></SelectTrigger></FormControl>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {sectors.filter(i => i.id).map(i => (
-                        <SelectItem key={i.id} value={getSafeLabel(i)}>{getSafeLabel(i)}</SelectItem>
+                      {sectors.filter(s => s.id).map(s => (
+                        <SelectItem key={s.id} value={getSafeLabel(s)}>{getSafeLabel(s)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -215,7 +240,7 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* SEÇÃO 4: HORÁRIOS */}
+            {/* HORÁRIOS */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="scheduleId" render={({ field }) => (
                 <FormItem>
@@ -223,8 +248,8 @@ export function EmployeeForm({
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue placeholder="Horário" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      {schedules.filter(i => i.id).map(i => (
-                        <SelectItem key={i.id} value={i.id}>{getSafeLabel(i)}</SelectItem>
+                      {schedules.filter(h => h.id).map(h => (
+                        <SelectItem key={h.id} value={h.id}>{getSafeLabel(h)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -234,11 +259,11 @@ export function EmployeeForm({
                 <FormItem>
                   <FormLabel>Escala (Opcional)</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value || ""}>
-                    <FormControl><SelectTrigger><SelectValue placeholder="Escala" /></SelectTrigger></FormControl>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Nenhuma" /></SelectTrigger></FormControl>
                     <SelectContent>
-                      <SelectItem value="none">Nenhuma</SelectItem>
-                      {scales.filter(i => i.id).map(i => (
-                        <SelectItem key={i.id} value={i.id}>{getSafeLabel(i)}</SelectItem>
+                      <SelectItem value="none">Nenhuma Escala</SelectItem>
+                      {scales.filter(e => e.id).map(e => (
+                        <SelectItem key={e.id} value={e.id}>{getSafeLabel(e)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -246,21 +271,23 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* SEÇÃO 5: CONTRATUAL */}
+            {/* DOCUMENTAÇÃO */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="matricula" render={({ field }) => (
-                <FormItem><FormLabel>Matrícula</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                <FormItem><FormLabel>Matrícula Interna</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
               )} />
               <FormField control={form.control} name="esocialMatricula" render={({ field }) => (
-                <FormItem><FormLabel>eSocial</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+                <FormItem><FormLabel>Matrícula eSocial</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
               )} />
             </div>
 
           </div>
 
-          <DialogFooter className="pt-4 border-t">
+          <DialogFooter className="pt-4 border-t gap-2">
             <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
-            <Button type="submit" disabled={!employee && isLimitReached}>Finalizar Registro</Button>
+            <Button type="submit" disabled={!employee && isLimitReached}>
+              {employee ? "Salvar Alterações" : "Cadastrar Colaborador"}
+            </Button>
           </DialogFooter>
         </form>
       </Form>

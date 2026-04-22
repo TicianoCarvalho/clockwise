@@ -1,41 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Edit, EllipsisVertical, PlusCircle, Trash2, Upload, Users, Loader2, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmployeeForm } from "@/components/EmployeeForm";
 import { EmployeeImportDialog } from "@/components/EmployeeImportDialog";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +32,7 @@ export default function EmployeesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
 
+  // 1. Fetch de Empresas (Para Master)
   const masterTenantsQuery = useMemoFirebase(() => 
     (firestore && userRole === 'master') ? query(collection(firestore, 'tenants')) : null, 
   [firestore, userRole]);
@@ -74,6 +48,7 @@ export default function EmployeesPage() {
 
   const finalTenantId = userRole === 'master' ? selectedTenantId : tenantId;
   
+  // 2. Fetch de Colaboradores
   const employeesQuery = useMemoFirebase(() => 
     (firestore && finalTenantId) ? collection(firestore, 'tenants', finalTenantId, 'employees') : null, 
   [firestore, finalTenantId]);
@@ -82,18 +57,13 @@ export default function EmployeesPage() {
   const employees = useMemo(() => employeesData || [], [employeesData]);
 
   const activeEmployeesCount = useMemo(() => {
-    return employees.filter(emp => {
-      const isStatusAtivo = emp?.status === "Ativo" || !emp?.status;
-      const hasNoTermination = !emp?.terminationDate;
-      return isStatusAtivo && hasNoTermination;
-    }).length;
+    return employees.filter(emp => (emp?.status === "Ativo" || !emp?.status) && !emp?.terminationDate).length;
   }, [employees]);
 
   const planLimit = 20; 
   const isLimitReached = activeEmployeesCount >= planLimit;
 
-  // --- AJUSTE DE QUERIES: Buscando dados específicos da Empresa (Tenant) ---
-  // Se o local de trabalho não aparece, é porque ele deve estar dentro de 'tenants/{id}/locations'
+  // 3. Queries de Apoio (AJUSTADAS PARA TENANT E GLOBAL)
   const locationsQuery = useMemoFirebase(() => 
     (firestore && finalTenantId) ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, 
   [firestore, finalTenantId]);
@@ -115,7 +85,8 @@ export default function EmployeesPage() {
     return employees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   }, [employees, currentPage, itemsPerPage]);
 
-  const handleSubmitEmployee = async (data: any) => {
+  // 4. SUBMIT HANDLER CORRIGIDO (O CORAÇÃO DA SOLUÇÃO)
+  const handleSubmitEmployee = async (formData: any) => {
     if (!firestore || !finalTenantId) return;
 
     const isEditing = !!editingEmployee;
@@ -130,13 +101,11 @@ export default function EmployeesPage() {
     }
 
     try {
-      // Garante que campos booleanos e IDs de escala sejam tratados corretamente
+      // Blindagem: Pegamos TUDO que veio do formulário (...formData) 
+      // e apenas adicionamos/sobrescrevemos o essencial do sistema.
       const employeeData = { 
-          ...data, 
+          ...formData, 
           tenantId: finalTenantId,
-          allowMobilePunch: data.allowMobilePunch ?? true,
-          automaticInterval: data.automaticInterval ?? true,
-          scaleId: data.scaleId === "none" ? null : data.scaleId,
           updatedAt: new Date().toISOString()
       };
 
@@ -144,10 +113,10 @@ export default function EmployeesPage() {
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', editingEmployee.id);
           await updateDoc(docRef, employeeData);
       } else {
-          const docId = data.cpf.replace(/\D/g, "");
+          const docId = formData.cpf.replace(/\D/g, "");
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', docId);
           
-          if (employees.some(e => e.cpf === data.cpf)) {
+          if (employees.some(e => e.cpf === formData.cpf)) {
             toast({ variant: "destructive", title: "CPF já cadastrado" });
             return;
           }
@@ -163,10 +132,7 @@ export default function EmployeesPage() {
   };
 
   return (
-    // ... (o restante do seu JSX permanece o mesmo)
     <div className="flex flex-col h-full space-y-6">
-      {/* Mantenha o conteúdo do seu return exatamente como você enviou acima */}
-      {/* O importante foram as mudanças nas QUERIES e no HANDLER acima */}
       <header className="flex items-center justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-2xl">
