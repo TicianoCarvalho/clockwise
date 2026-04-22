@@ -81,14 +81,15 @@ export default function EmployeesPage() {
   [firestore, finalTenantId]);
   
   const { data: employeesData, isLoading: employeesLoading } = useCollection<Employee>(employeesQuery);
+  
+  // Proteção contra dados nulos na listagem
   const employees = useMemo(() => employeesData || [], [employeesData]);
 
   // --- LÓGICA DE CONTAGEM CORRIGIDA (STATUS "Ativo" + LEGADO) ---
   const activeEmployeesCount = useMemo(() => {
     return employees.filter(emp => {
-      // Considera ativo se status for "Ativo" OU se estiver vazio (legado) e não houver rescisão
-      const isStatusAtivo = emp.status === "Ativo" || !emp.status;
-      const hasNoTermination = !emp.terminationDate;
+      const isStatusAtivo = emp?.status === "Ativo" || !emp?.status;
+      const hasNoTermination = !emp?.terminationDate;
       return isStatusAtivo && hasNoTermination;
     }).length;
   }, [employees]);
@@ -96,7 +97,7 @@ export default function EmployeesPage() {
   const planLimit = 20; 
   const isLimitReached = activeEmployeesCount >= planLimit;
 
-  // 3. Queries de Apoio (Contextualizadas pelo Tenant)
+  // 3. Queries de Apoio
   const locationsQuery = useMemoFirebase(() => finalTenantId ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, [firestore, finalTenantId]);
   const { data: locations } = useCollection<Location>(locationsQuery);
   
@@ -117,7 +118,7 @@ export default function EmployeesPage() {
     return employees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   }, [employees, currentPage, itemsPerPage]);
 
-  // 5. Submit Handler (Sincronizado com o Form)
+  // 5. Submit Handler
   const handleSubmitEmployee = async (data: any) => {
     if (!firestore || !finalTenantId) return;
 
@@ -143,7 +144,6 @@ export default function EmployeesPage() {
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', editingEmployee.id);
           await updateDoc(docRef, employeeData);
       } else {
-          // ID baseado no CPF limpo
           const docId = data.cpf.replace(/\D/g, "");
           const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', docId);
           
@@ -214,7 +214,7 @@ export default function EmployeesPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {paginatedEmployees.map((emp) => (
-              <Card key={emp.id} className={`group hover:shadow-md transition-all ${emp.status === 'Inativo' ? 'opacity-60 grayscale' : ''}`}>
+              <Card key={emp?.id || Math.random()} className={`group hover:shadow-md transition-all ${emp?.status === 'Inativo' ? 'opacity-60 grayscale' : ''}`}>
                 <CardContent className="p-6 relative">
                   <div className="absolute top-3 right-3">
                     <DropdownMenu>
@@ -236,20 +236,20 @@ export default function EmployeesPage() {
                   <div className="flex flex-col items-center">
                     <div className="relative">
                       <Avatar className="h-20 w-20 border shadow-sm">
-                        <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+                        <AvatarImage src={emp?.avatarUrl} alt={emp?.name} />
                         <AvatarFallback className="bg-primary/5 text-primary font-bold">
-                          {emp.name?.slice(0, 2).toUpperCase()}
+                          {emp?.name?.slice(0, 2).toUpperCase() || "??"}
                         </AvatarFallback>
                       </Avatar>
-                      {emp.status === 'Inativo' && (
+                      {emp?.status === 'Inativo' && (
                         <Badge className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-destructive text-[10px]">INATIVO</Badge>
                       )}
                     </div>
-                    <h3 className="mt-4 font-bold text-center line-clamp-1">{emp.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-1">{emp.cpf}</p>
+                    <h3 className="mt-4 font-bold text-center line-clamp-1">{emp?.name || "Sem Nome"}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">{emp?.cpf || "000.000.000-00"}</p>
                     <div className="mt-4 flex flex-wrap justify-center gap-1">
-                      <Badge variant="secondary" className="text-[10px]">{emp.setor || 'Geral'}</Badge>
-                      <Badge variant="outline" className="text-[10px]">Mat: {emp.matricula}</Badge>
+                      <Badge variant="secondary" className="text-[10px]">{emp?.setor || 'Geral'}</Badge>
+                      <Badge variant="outline" className="text-[10px]">Mat: {emp?.matricula || "---"}</Badge>
                     </div>
                   </div>
                 </CardContent>
@@ -284,7 +284,7 @@ export default function EmployeesPage() {
         </div>
       </footer>
 
-      {/* Modais */}
+      {/* Modais centralizados no Dialog para evitar erro de Portal */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <EmployeeForm 
             employee={editingEmployee}
@@ -295,6 +295,11 @@ export default function EmployeesPage() {
             scales={scales || []}
             isLimitReached={isLimitReached}
           />
+      </Dialog>
+
+      {/* Modal de Importação separado para garantir contexto próprio de Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+          <EmployeeImportDialog tenantId={finalTenantId || ''} onOpenChange={setIsImportDialogOpen} />
       </Dialog>
 
       <AlertDialog open={isConfirmDeleteDialogOpen} onOpenChange={setIsConfirmDeleteDialogOpen}>
@@ -311,8 +316,6 @@ export default function EmployeesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <EmployeeImportDialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen} tenantId={finalTenantId || ''} />
     </div>
   );
 }
