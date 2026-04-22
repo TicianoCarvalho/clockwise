@@ -88,10 +88,6 @@ export function EmployeeForm({
   isLimitReached = false 
 }: EmployeeFormProps) {
   const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isCameraDialogOpen, setIsCameraDialogOpen] = useState(false);
-  const [stream, setStream] = useState<MediaStream | null>(null);
   
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -150,143 +146,138 @@ export function EmployeeForm({
     onSubmit(payload);
   };
 
+  // Função auxiliar para extrair o nome de qualquer campo comum do Firestore
+  const getItemLabel = (item: any) => {
+    return item.name || item.nome || item.descricao || item.label || "Sem nome";
+  };
+
   return (
-    <>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{employee ? "Editar Funcionário" : "Adicionar Funcionário"}</DialogTitle>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-2xl">
+      <DialogHeader>
+        <DialogTitle>{employee ? "Editar Funcionário" : "Adicionar Funcionário"}</DialogTitle>
+      </DialogHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleFormSubmit)}>
-            <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-2">
-              
-              {/* STATUS E PERFIL */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border">
-                <FormField control={form.control} name="status" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between space-y-0">
-                    <FormLabel className="font-bold">Status do Colaborador</FormLabel>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="role" render={({ field }) => (
-                  <FormItem>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Nível de Acesso" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="admin">Administrador</SelectItem>
-                        <SelectItem value="supervisor">Supervisor</SelectItem>
-                        <SelectItem value="usuario">Usuário Comum</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )} />
-              </div>
-
-              {/* DADOS PESSOAIS */}
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="name" render={({ field }) => (
-                  <FormItem><FormLabel>Nome Completo*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
-                )} />
-                <FormField control={form.control} name="cpf" render={({ field }) => (
-                  <FormItem><FormLabel>CPF*</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} /></FormControl></FormItem>
-                )} />
-              </div>
-
-              {/* LOCAL E SETOR (AJUSTADO PARA name OU nome) */}
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="localTrabalho" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Local de Trabalho</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {locations.map(l => (
-                          <SelectItem key={l.id} value={l.name || (l as any).nome}>
-                            {l.name || (l as any).nome || "Sem nome"}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="setor" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Setor</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {sectors.map(s => (
-                          <SelectItem key={s.id} value={s.name || (s as any).nome}>
-                            {s.name || (s as any).nome || "Sem nome"}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )} />
-              </div>
-
-              {/* HORÁRIO (AJUSTADO PARA name OU nome) */}
-              <div className="grid grid-cols-1 gap-4">
-                <FormField control={form.control} name="scheduleId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Horário Base (Regra de Ponto)</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione o Horário" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {schedules.map(s => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.name || (s as any).nome || "Sem nome"}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )} />
-              </div>
-
-              {/* ESCALA (OPCIONAL) */}
-              <div className="grid grid-cols-1 gap-4">
-                <FormField control={form.control} name="scaleId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Escala de Trabalho (Opcional)</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || ""}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione a Escala" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="">Nenhuma Escala</SelectItem>
-                        {scales.map(sc => (
-                          <SelectItem key={sc.id} value={sc.id}>
-                            {sc.name || (sc as any).nome || "Sem nome"}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )} />
-              </div>
-
-              {/* DADOS CONTRATUAIS */}
-              <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="matricula" render={({ field }) => (
-                  <FormItem><FormLabel>Matrícula*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
-                )} />
-                <FormField control={form.control} name="esocialMatricula" render={({ field }) => (
-                  <FormItem><FormLabel>Matrícula eSocial*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
-                )} />
-              </div>
-
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(handleFormSubmit)}>
+          <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-2">
+            
+            {/* STATUS E PERFIL */}
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border">
+              <FormField control={form.control} name="status" render={({ field }) => (
+                <FormItem className="flex items-center justify-between space-y-0">
+                  <FormLabel className="font-bold">Status do Colaborador</FormLabel>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="role" render={({ field }) => (
+                <FormItem>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Nível de Acesso" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="supervisor">Supervisor</SelectItem>
+                      <SelectItem value="usuario">Usuário Comum</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
             </div>
 
-            <DialogFooter className="pt-4 border-t">
-              <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
-              <Button type="submit" disabled={!employee && isLimitReached}>
-                {employee ? "Salvar Alterações" : "Cadastrar"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </>
+            {/* DADOS PESSOAIS */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="name" render={({ field }) => (
+                <FormItem><FormLabel>Nome Completo*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+              )} />
+              <FormField control={form.control} name="cpf" render={({ field }) => (
+                <FormItem><FormLabel>CPF*</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} /></FormControl></FormItem>
+              )} />
+            </div>
+
+            {/* LOCAL E SETOR */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="localTrabalho" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Local de Trabalho</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {locations.map(l => (
+                        <SelectItem key={l.id} value={getItemLabel(l)}>{getItemLabel(l)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="setor" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Setor</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {sectors.map(s => (
+                        <SelectItem key={s.id} value={getItemLabel(s)}>{getItemLabel(s)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
+
+            {/* HORÁRIO */}
+            <div className="grid grid-cols-1 gap-4">
+              <FormField control={form.control} name="scheduleId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Horário Base (Regra de Ponto)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione o Horário" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {schedules.map(s => (
+                        <SelectItem key={s.id} value={s.id}>{getItemLabel(s)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
+
+            {/* ESCALA */}
+            <div className="grid grid-cols-1 gap-4">
+              <FormField control={form.control} name="scaleId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Escala de Trabalho (Opcional)</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || ""}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione a Escala" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="">Nenhuma Escala</SelectItem>
+                      {scales.map(sc => (
+                        <SelectItem key={sc.id} value={sc.id}>{getItemLabel(sc)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+            </div>
+
+            {/* MATRÍCULA */}
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="matricula" render={({ field }) => (
+                <FormItem><FormLabel>Matrícula*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+              )} />
+              <FormField control={form.control} name="esocialMatricula" render={({ field }) => (
+                <FormItem><FormLabel>Matrícula eSocial*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
+              )} />
+            </div>
+
+          </div>
+
+          <DialogFooter className="pt-4 border-t">
+            <DialogClose asChild><Button type="button" variant="outline">Cancelar</Button></DialogClose>
+            <Button type="submit" disabled={!employee && isLimitReached}>
+              {employee ? "Salvar Alterações" : "Cadastrar"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </Form>
+    </DialogContent>
   );
 }
