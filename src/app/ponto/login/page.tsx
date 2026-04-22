@@ -36,12 +36,19 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useFirebase } from "@/firebase";
-import { collectionGroup, query, where, limit, getDocs, updateDoc } from "firebase/firestore";
+import { 
+  collectionGroup, 
+  query, 
+  where, 
+  limit, 
+  getDocs, 
+  setDoc // Importado setDoc para maior robustez
+} from "firebase/firestore";
 
 // --- SCHEMAS ---
 const loginFormSchema = z.object({
   cpf: z.string().min(14, "CPF incompleto."),
-  password: z.string().optional(), // Senha opcional para permitir detecção de 1º acesso
+  password: z.string().optional(),
 });
 
 const firstAccessSchema = z.object({
@@ -82,8 +89,9 @@ export default function ColaboradorLoginPage() {
     return onlyDigits;
   };
 
-  // --- BUSCA GLOBAL (FUNÇÃO ÚNICA) ---
+  // --- BUSCA GLOBAL ---
   const findEmployee = async (cpf: string) => {
+    if (!firestore) return null;
     const q = query(collectionGroup(firestore, 'employees'), where("cpf", "==", cpf), limit(1));
     const snap = await getDocs(q);
     return snap.empty ? null : snap.docs[0];
@@ -103,23 +111,23 @@ export default function ColaboradorLoginPage() {
 
       const employeeData = docSnap.data();
 
-      // SE NÃO TIVER SENHA NO BANCO -> ABRE O MODAL DE 1º ACESSO AUTOMATICAMENTE
+      // Detecção de 1º acesso (sem senha ou senha vazia)
       if (!employeeData.password || employeeData.password === "") {
         setCpfForFirstAccess(data.cpf);
         setShowFirstAccessModal(true);
-        toast({ title: "Primeiro Acesso Detectado", description: "Por favor, cadastre sua senha." });
+        toast({ title: "Bem-vindo!", description: "Crie sua senha de acesso." });
         return;
       }
 
-      // SE TIVER SENHA -> VALIDA A DIGITADA
       if (employeeData.password === data.password) {
         toast({ title: "Login realizado!" });
         router.push(`/ponto/registro?cpf=${data.cpf}`);
       } else {
         setError("Senha incorreta.");
       }
-    } catch (err) {
-      setError("Erro de conexão. Verifique o índice do Firebase.");
+    } catch (err: any) {
+      console.error(err);
+      setError("Erro ao validar acesso. Verifique sua conexão.");
     } finally {
       setLoading(false);
     }
@@ -129,18 +137,29 @@ export default function ColaboradorLoginPage() {
   const handleFirstAccess: SubmitHandler<FirstAccessFormValues> = async (data) => {
     setLoading(true);
     try {
+      // Re-valida o documento para garantir a referência (ref)
       const docSnap = await findEmployee(cpfForFirstAccess);
+      
       if (docSnap) {
-        await updateDoc(docSnap.ref, {
+        // Usamos setDoc com merge: true para garantir a criação do campo password
+        await setDoc(docSnap.ref, {
           password: data.newPassword,
           updatedAt: new Date().toISOString()
-        });
+        }, { merge: true });
+
         toast({ title: "Senha criada com sucesso!" });
         setShowFirstAccessModal(false);
         router.push(`/ponto/registro?cpf=${cpfForFirstAccess}`);
+      } else {
+        toast({ variant: "destructive", title: "Erro", description: "Colaborador não encontrado." });
       }
-    } catch (err) {
-      toast({ variant: "destructive", title: "Erro ao salvar senha" });
+    } catch (err: any) {
+      console.error("Erro ao salvar senha:", err);
+      toast({ 
+        variant: "destructive", 
+        title: "Erro ao salvar", 
+        description: "Verifique as permissões do Firebase." 
+      });
     } finally {
       setLoading(false);
     }
@@ -151,9 +170,11 @@ export default function ColaboradorLoginPage() {
       <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
         <Card className="w-full max-w-sm shadow-lg">
           <CardHeader className="text-center">
-            <User className="mx-auto h-10 w-10 text-primary mb-2" />
+            <div className="mx-auto h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center mb-2">
+              <User className="h-6 w-6 text-primary" />
+            </div>
             <CardTitle>Área do Colaborador</CardTitle>
-            <CardDescription>Entre com seu CPF para bater o ponto</CardDescription>
+            <CardDescription>Acesse para registrar seu ponto</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...loginForm}>
@@ -162,7 +183,12 @@ export default function ColaboradorLoginPage() {
                   <FormItem>
                     <FormLabel>CPF</FormLabel>
                     <FormControl>
-                      <Input placeholder="000.000.000-00" {...field} onChange={(e) => field.onChange(formatCpf(e.target.value))} maxLength={14} />
+                      <Input 
+                        placeholder="000.000.000-00" 
+                        {...field} 
+                        onChange={(e) => field.onChange(formatCpf(e.target.value))} 
+                        maxLength={14} 
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -176,40 +202,66 @@ export default function ColaboradorLoginPage() {
                     <FormMessage />
                   </FormItem>
                 )} />
-                {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-                <Button type="submit" className="w-full h-12" disabled={loading}>
-                  {loading ? <Loader2 className="animate-spin" /> : "Entrar"}
+                {error && (
+                  <Alert variant="destructive" className="py-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+                <Button type="submit" className="w-full h-12 text-base" disabled={loading}>
+                  {loading ? <Loader2 className="animate-spin mr-2" /> : "Entrar"}
                 </Button>
               </form>
             </Form>
           </CardContent>
           <CardFooter className="flex justify-center border-t py-4">
-             <Button variant="ghost" size="sm" onClick={() => {
-               const cpf = loginForm.getValues("cpf");
-               if (cpf.length === 14) { setCpfForFirstAccess(cpf); setShowFirstAccessModal(true); }
-               else { toast({ title: "Atenção", description: "Digite seu CPF primeiro." }); }
-             }}>
-               É meu primeiro acesso
+             <Button 
+                variant="link" 
+                size="sm" 
+                className="text-muted-foreground"
+                onClick={() => {
+                  const cpf = loginForm.getValues("cpf");
+                  if (cpf.length === 14) { 
+                    setCpfForFirstAccess(cpf); 
+                    setShowFirstAccessModal(true); 
+                  } else { 
+                    toast({ title: "Atenção", description: "Digite seu CPF completo primeiro." }); 
+                  }
+                }}
+              >
+               Primeiro acesso? Cadastre sua senha
              </Button>
           </CardFooter>
         </Card>
       </main>
 
       <Dialog open={showFirstAccessModal} onOpenChange={setShowFirstAccessModal}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Cadastrar Senha</DialogTitle>
-            <DialogDescription>CPF: {cpfForFirstAccess}</DialogDescription>
+            <DialogTitle>Configurar Senha</DialogTitle>
+            <DialogDescription>
+              Defina uma senha para o CPF {cpfForFirstAccess}
+            </DialogDescription>
           </DialogHeader>
           <Form {...firstAccessForm}>
-            <form onSubmit={firstAccessForm.handleSubmit(handleFirstAccess)} className="space-y-4">
+            <form onSubmit={firstAccessForm.handleSubmit(handleFirstAccess)} className="space-y-4 pt-4">
               <FormField control={firstAccessForm.control} name="newPassword" render={({ field }) => (
-                <FormItem><FormLabel>Nova Senha</FormLabel><Input type="password" {...field} /></FormItem>
+                <FormItem>
+                  <FormLabel>Nova Senha</FormLabel>
+                  <FormControl><Input type="password" placeholder="Mínimo 6 dígitos" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
               <FormField control={firstAccessForm.control} name="confirmPassword" render={({ field }) => (
-                <FormItem><FormLabel>Confirmar Senha</FormLabel><Input type="password" {...field} /></FormItem>
+                <FormItem>
+                  <FormLabel>Confirmar Senha</FormLabel>
+                  <FormControl><Input type="password" placeholder="Repita a senha" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
               )} />
-              <Button type="submit" className="w-full bg-green-600" disabled={loading}>Ativar meu acesso</Button>
+              <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
+                {loading ? <Loader2 className="animate-spin mr-2" /> : "Ativar meu acesso"}
+              </Button>
             </form>
           </Form>
         </DialogContent>
