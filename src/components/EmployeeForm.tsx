@@ -5,7 +5,7 @@ import { useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, parseISO } from "date-fns";
-import { Camera, Users, Trash2, Upload, X, Check } from "lucide-react";
+import { Camera, Users, Trash2, Upload, X, Check, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -127,12 +127,12 @@ export function EmployeeForm({
         admissionDate: employee.admissionDate ? parseISO(employee.admissionDate) : null,
         birthDate: (employee as any).birthDate ? parseISO((employee as any).birthDate as string) : null,
         scaleId: employee.scaleId || "",
-        role: (employee as any).role || "usuario"
+        role: (employee as any).role || "usuario",
+        password: employee.password || ""
       });
     }
   }, [employee, form]);
 
-  // --- LÓGICA DE CÂMERA ---
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -163,7 +163,6 @@ export function EmployeeForm({
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext("2d");
       if (ctx) {
-        // Espelha a imagem para o canvas se estiver usando a frontal
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0);
@@ -211,9 +210,7 @@ export function EmployeeForm({
         <form onSubmit={form.handleSubmit(handleFormSubmit)}>
           <div className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
             
-            {/* ÁREA DE BIOMETRIA DINÂMICA */}
             <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl bg-slate-50 mb-4 border-primary/20 relative">
-              
               {!isCameraActive ? (
                 <div className="flex flex-col items-center">
                   <div className="relative mb-4">
@@ -229,19 +226,16 @@ export function EmployeeForm({
                       </div>
                     )}
                   </div>
-
                   <div className="flex gap-2">
                     <Button type="button" variant="default" size="sm" onClick={startCamera}>
                       <Camera className="mr-2 h-4 w-4" /> Abrir Câmera
                     </Button>
-                    
                     <label className="cursor-pointer">
                       <Button type="button" variant="outline" size="sm" asChild>
                         <span><Upload className="mr-2 h-4 w-4" /> Importar</span>
                       </Button>
                       <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
                     </label>
-
                     {form.watch("avatarUrl") && (
                       <Button type="button" variant="ghost" size="sm" onClick={() => form.setValue("avatarUrl", "")}>
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -268,7 +262,6 @@ export function EmployeeForm({
               )}
             </div>
 
-            {/* STATUS E NIVEL DE ACESSO */}
             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border">
               <FormField control={form.control} name="status" render={({ field }) => (
                 <FormItem className="flex items-center justify-between space-y-0">
@@ -291,7 +284,6 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* DADOS PESSOAIS */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="name" render={({ field }) => (
                 <FormItem><FormLabel>Nome Completo*</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
@@ -310,9 +302,51 @@ export function EmployeeForm({
               )} />
             </div>
 
+            {/* SEÇÃO DE SENHA E RESET */}
+            <div className="grid grid-cols-2 gap-4 items-end">
+              <FormField control={form.control} name="password" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Senha de Acesso (App)</FormLabel>
+                  <div className="flex gap-2">
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        type="password" 
+                        readOnly 
+                        placeholder={field.value ? "••••••••" : "Sem senha"} 
+                        className="bg-slate-50 italic text-muted-foreground"
+                      />
+                    </FormControl>
+                    {employee && (
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="icon"
+                        title="Resetar Senha"
+                        className="border-orange-200 text-orange-600 hover:bg-orange-50 shrink-0"
+                        onClick={() => {
+                          if(confirm("Resetar senha? O colaborador deverá criar uma nova no primeiro acesso.")) {
+                            form.setValue("password", "");
+                          }
+                        }}
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </FormItem>
+              )} />
+              <div className="pb-3">
+                <p className="text-[10px] leading-tight text-muted-foreground">
+                   {form.watch("password") 
+                    ? "✓ Colaborador possui senha ativa." 
+                    : "⚠ Sem senha definida ou aguardando reset."}
+                </p>
+              </div>
+            </div>
+
             <Separator />
 
-            {/* REGRAS DE PONTO */}
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 grid grid-cols-2 gap-4">
               <FormField control={form.control} name="allowMobilePunch" render={({ field }) => (
                 <FormItem className="flex items-center justify-between p-2 bg-white rounded border">
@@ -328,7 +362,6 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* ALOCAÇÃO */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="localTrabalho" render={({ field }) => (
                 <FormItem>
@@ -358,7 +391,6 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* HORÁRIOS */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="scheduleId" render={({ field }) => (
                 <FormItem>
@@ -389,7 +421,6 @@ export function EmployeeForm({
               )} />
             </div>
 
-            {/* DOCUMENTAÇÃO */}
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="matricula" render={({ field }) => (
                 <FormItem><FormLabel>Matrícula Interna</FormLabel><FormControl><Input {...field} /></FormControl></FormItem>
@@ -411,4 +442,4 @@ export function EmployeeForm({
       </Form>
     </DialogContent>
   );
-}   
+}
