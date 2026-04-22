@@ -59,7 +59,6 @@ export default function EmployeesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
 
-  // 1. Fetch de Empresas (Para Master)
   const masterTenantsQuery = useMemoFirebase(() => 
     (firestore && userRole === 'master') ? query(collection(firestore, 'tenants')) : null, 
   [firestore, userRole]);
@@ -75,7 +74,6 @@ export default function EmployeesPage() {
 
   const finalTenantId = userRole === 'master' ? selectedTenantId : tenantId;
   
-  // 2. Fetch de Colaboradores
   const employeesQuery = useMemoFirebase(() => 
     (firestore && finalTenantId) ? collection(firestore, 'tenants', finalTenantId, 'employees') : null, 
   [firestore, finalTenantId]);
@@ -83,7 +81,6 @@ export default function EmployeesPage() {
   const { data: employeesData, isLoading: employeesLoading } = useCollection<Employee>(employeesQuery);
   const employees = useMemo(() => employeesData || [], [employeesData]);
 
-  // --- LÓGICA DE CONTAGEM CORRIGIDA ---
   const activeEmployeesCount = useMemo(() => {
     return employees.filter(emp => {
       const isStatusAtivo = emp?.status === "Ativo" || !emp?.status;
@@ -95,9 +92,11 @@ export default function EmployeesPage() {
   const planLimit = 20; 
   const isLimitReached = activeEmployeesCount >= planLimit;
 
-  // 3. Queries de Apoio (AJUSTADAS PARA CAMINHO GLOBAL)
-  // Se os seus dados estiverem na raiz do Firestore, esses caminhos são os corretos.
-  const locationsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'locations') : null, [firestore]);
+  // --- AJUSTE DE QUERIES: Buscando dados específicos da Empresa (Tenant) ---
+  // Se o local de trabalho não aparece, é porque ele deve estar dentro de 'tenants/{id}/locations'
+  const locationsQuery = useMemoFirebase(() => 
+    (firestore && finalTenantId) ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, 
+  [firestore, finalTenantId]);
   const { data: locations } = useCollection<Location>(locationsQuery);
   
   const sectorsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'sectors') : null, [firestore]);
@@ -111,13 +110,11 @@ export default function EmployeesPage() {
   
   const isLoading = employeesLoading || (userRole === 'master' && tenantsLoading);
   
-  // 4. Paginação
   const totalPages = Math.ceil(employees.length / itemsPerPage);
   const paginatedEmployees = useMemo(() => {
     return employees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   }, [employees, currentPage, itemsPerPage]);
 
-  // 5. Submit Handler
   const handleSubmitEmployee = async (data: any) => {
     if (!firestore || !finalTenantId) return;
 
@@ -133,9 +130,13 @@ export default function EmployeesPage() {
     }
 
     try {
+      // Garante que campos booleanos e IDs de escala sejam tratados corretamente
       const employeeData = { 
           ...data, 
           tenantId: finalTenantId,
+          allowMobilePunch: data.allowMobilePunch ?? true,
+          automaticInterval: data.automaticInterval ?? true,
+          scaleId: data.scaleId === "none" ? null : data.scaleId,
           updatedAt: new Date().toISOString()
       };
 
@@ -162,7 +163,10 @@ export default function EmployeesPage() {
   };
 
   return (
+    // ... (o restante do seu JSX permanece o mesmo)
     <div className="flex flex-col h-full space-y-6">
+      {/* Mantenha o conteúdo do seu return exatamente como você enviou acima */}
+      {/* O importante foram as mudanças nas QUERIES e no HANDLER acima */}
       <header className="flex items-center justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-2xl">
@@ -283,7 +287,6 @@ export default function EmployeesPage() {
         </div>
       </footer>
 
-      {/* Modais centralizados */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <EmployeeForm 
             employee={editingEmployee}
