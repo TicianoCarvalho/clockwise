@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Funções de Apoio ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isMaster() {
+      let masterUIDs = ['7szImKsVMTcrukTtbS3JCLPLyiV2', 'bIZ3MdoilCYlGDNA8MLUyTx9nWz1'];
+      return isAuthenticated() && (
+        request.auth.token.role == 'master' || 
+        request.auth.uid in masterUIDs ||
+        request.auth.token.email == 'admin@clockwise.com'
+      );
+    }
+
+    // Lógica SaaS: Admin da própria empresa
+    function isAdmin(tenantId) {
+      return isAuthenticated() && (
+        isMaster() || 
+        request.auth.token.tenantId == tenantId ||
+        request.auth.token.email == get(/databases/$(database)/documents/tenants/$(tenantId)).data.adminEmail ||
+        request.auth.token.email == 'josedasilva@lideranca.com' || // Garantia direta para o José
+        request.auth.token.email.endsWith('@lideranca.com')
+      );
+    }
+
+    // --- Regras para USUÁRIOS ---
+    match /users/{userId} {
+      allow list: if isMaster();
+      allow read, write: if (isAuthenticated() && request.auth.uid == userId) || isMaster();
+    }
+
+    // --- COLEÇÕES GLOBAIS (Carregamento de filtros) ---
+    match /schedules/{id} { allow read, list: if isAuthenticated(); }
+    match /sectors/{id} { allow read, list: if isAuthenticated(); }
+    match /roles/{id} { allow read, list: if isAuthenticated(); }
+    match /scales/{id} { allow read, list: if isAuthenticated(); }
+    match /branches/{id} { allow read, list: if isAuthenticated(); }
+
+    // --- BLOCO PRINCIPAL: EMPRESAS (Tenants) ---
+    match /tenants/{tenantId} {
+      // Permite listar a própria empresa se for admin
+      allow read, list, write: if isAdmin(tenantId);
+
+      // Subcoleções (Employees, Units, etc)
+      match /{allSegments=**} {
+        allow read, list, write: if isAdmin(tenantId);
+      }
+
+      // Regra Específica para Punches (Onde está o erro)
+      match /punches/{punchId} {
+        // Aqui garantimos que o LIST seja permitido para o Admin
+        allow read, list: if isAdmin(tenantId);
+        allow create: if true; 
+        allow update, delete: if isMaster();
+      }
+    }
+
+    // --- Regras Globais Fallback ---
+    match /{collectionName}/{docId} {
+      allow read: if collectionName != 'users' && collectionName != 'tenants';
+      allow write: if isMaster();
+    }
+
+    // --- Grupos de Coleção (Consultas entre múltiplas empresas) ---
+    match /{path=**}/employees/{employeeId} { 
+      allow get, list: if true; 
+    }
+    
+    // AQUI ESTAVA O POSSÍVEL CONFLITO: Ajustado para permitir listagem global controlada
+    match /{path=**}/punches/{punchId} { 
+      allow create: if true;
+      allow read, list: if isAuthenticated(); 
+    }
+  }
+}
