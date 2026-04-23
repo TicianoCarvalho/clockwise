@@ -35,7 +35,7 @@ export default function AdminStatsPage() {
         let role = claims.role as string;
         let tId = claims.tenantId as string;
 
-        // 2. FALLBACK: Se o token não tem tenantId (caso de admins de confiança como o José),
+        // 2. FALLBACK CRUCIAL: Se o token não tem tenantId (caso do José),
         // buscamos diretamente no documento do usuário na coleção 'users'
         if (!tId && user.uid) {
           const userDoc = await getDoc(doc(firestore, "users", user.uid));
@@ -49,7 +49,7 @@ export default function AdminStatsPage() {
         setUserRole(role || 'user');
         setUserTenantId(tId);
 
-        // 3. Lógica de Autorização (Bypass para José, Administradores e ClockWise)
+        // 3. Lógica de Autorização (Suporta Master e Admins de Gestão)
         const isLideranca = user.email?.toLowerCase().endsWith('@lideranca.com');
         const isMasterEmail = user.email === 'admin@clockwise.com';
 
@@ -67,16 +67,14 @@ export default function AdminStatsPage() {
     validateAccess();
   }, [user, isUserLoading, firestore]);
 
-  // Consulta de Empresas: Só dispara quando o tenantId estiver pronto (para não-masters)
+  // Consulta de Empresas: Filtrada pelo CNPJ do Admin ou liberada para Master
   const tenantsQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorized) return null;
-    
     const baseRef = collection(firestore, 'tenants');
     
-    // Se for Master, lista todas as empresas
     if (userRole === 'master') return baseRef;
 
-    // Se for Admin, filtra pelo tenantId recuperado (ID do documento/CNPJ)
+    // Só dispara a consulta se já tivermos o tenantId do Admin
     if (userTenantId) {
       return query(baseRef, where("__name__", "==", userTenantId));
     }
@@ -86,10 +84,9 @@ export default function AdminStatsPage() {
 
   const { data: tenants, isLoading: loadingTenants } = useCollection<Company>(tenantsQuery);
 
-  // Consulta de Usuários: Filtra apenas colaboradores da empresa do Admin
+  // Consulta de Usuários: Lista apenas quem pertence à empresa do Admin
   const usersQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorized) return null;
-    
     const baseRef = collection(firestore, 'users');
     
     if (userRole === 'master') return baseRef;
@@ -103,7 +100,6 @@ export default function AdminStatsPage() {
 
   const { data: users, isLoading: loadingUsers } = useCollection<User>(usersQuery);
 
-  // Estado de carregamento unificado
   const isLoading = isUserLoading || isAuthorized === null || (isAuthorized && (loadingTenants || loadingUsers));
 
   if (isLoading) {
