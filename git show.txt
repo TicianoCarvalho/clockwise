@@ -1,0 +1,110 @@
+PS C:\clockwise> git show
+commit 558d89718e9b0a5a6b73d62d66fb7acfe321a67d (HEAD -> main, origin/main)
+Author: Ticiano Carvalho <ticiano.aleph@gmail.com>
+Date:   Wed Apr 22 23:44:44 2026 -0300
+
+    fix: permissão de listagem de pontos e centralização de rules
+
+diff --git a/firestore.rules b/firestore.rules
+index e4f570b..e55bfc8 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -22,7 +22,8 @@ service cloud.firestore {
+         isMaster() || 
+         request.auth.token.tenantId == tenantId ||
+         request.auth.token.email == get(/databases/$(database)/documents/ten
+ants/$(tenantId)).data.adminEmail ||
+-        request.auth.token.email.endsWith('@lideranca.com') // Bypass tempor
+ário para seu cliente
++        request.auth.token.email == 'josedasilva@lideranca.com' || // Garant
+ia direta para o José
++        request.auth.token.email.endsWith('@lideranca.com')
+       );
+     }
+ 
+@@ -32,8 +33,7 @@ service cloud.firestore {
+       allow read, write: if (isAuthenticated() && request.auth.uid == userId
+) || isMaster();
+     }
+ 
+-    // --- COLEÇÕES GLOBAIS ---
+-    // Importante: Adicionado 'list' para os filtros do dashboard funcionare
+m
++    // --- COLEÇÕES GLOBAIS (Carregamento de filtros) ---
+     match /schedules/{id} { allow read, list: if isAuthenticated(); }
+     match /sectors/{id} { allow read, list: if isAuthenticated(); }
+     match /roles/{id} { allow read, list: if isAuthenticated(); }
+@@ -42,16 +42,17 @@ service cloud.firestore {
+ 
+     // --- BLOCO PRINCIPAL: EMPRESAS (Tenants) ---
+     match /tenants/{tenantId} {
+-      allow list: if isMaster() || (isAuthenticated() && request.auth.token.
+role == 'admin');
+-      allow read, write: if isAdmin(tenantId);
++      // Permite listar a própria empresa se for admin
++      allow read, list, write: if isAdmin(tenantId);
+ 
+-      // Subcoleções (Employees, Punches, etc)
++      // Subcoleções (Employees, Units, etc)
+       match /{allSegments=**} {
+         allow read, list, write: if isAdmin(tenantId);
+       }
+ 
+-      // Regra de Inviolabilidade de Pontos
++      // Regra Específica para Punches (Onde está o erro)
+       match /punches/{punchId} {
++        // Aqui garantimos que o LIST seja permitido para o Admin
+         allow read, list: if isAdmin(tenantId);
+         allow create: if true; 
+         allow update, delete: if isMaster();
+@@ -64,11 +65,15 @@ service cloud.firestore {
+       allow write: if isMaster();
+     }
+ 
+-    // --- Grupos de Coleção (Queries Globais) ---
++    // --- Grupos de Coleção (Consultas entre múltiplas empresas) ---
+     match /{path=**}/employees/{employeeId} { 
+-      allow get: if true;
+-      allow list: if true; 
++      allow get, list: if true; 
++    }
++    
++    // AQUI ESTAVA O POSSÍVEL CONFLITO: Ajustado para permitir listagem glob
+al controlada
++    match /{path=**}/punches/{punchId} { 
++      allow create: if true;
++      allow read, list: if isAuthenticated(); 
+     }
+-    match /{path=**}/punches/{punchId} { allow read, list, create: if true; 
+}
+   }
+ }
+\ No newline at end of file
+(END)
++    match /{path=**}/punches/{punchId} { 
++      allow create: if true;
++      allow read, list: if isAuthenticated(); 
+     }
+-    match /{path=**}/punches/{punchId} { allow read, list, create: if true; }
+   }
+ }
+\ No newline at end of file
+commit 558d89718e9b0a5a6b73d62d66fb7acfe321a67d (HEAD -> main, origin/main)
+Author: Ticiano Carvalho <ticiano.aleph@gmail.com>
+Date:   Wed Apr 22 23:44:44 2026 -0300
+
+    fix: permissão de listagem de pontos e centralização de rules
+
+diff --git a/firestore.rules b/firestore.rules
+index e4f570b..e55bfc8 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -22,7 +22,8 @@ service cloud.firestore {
+         isMaster() || 
+         request.auth.token.tenantId == tenantId ||
+         request.auth.token.email == get(/databases/$(database)/documents/tenants/$(tenantId)).data.adminEmail ||
+-        request.auth.token.email.endsWith('@lideranca.com') // Bypass temporário para seu cliente
++        request.auth.token.email == 'josedasilva@lideranca.com' || // Garant
+ia direta para o José
++        request.auth.token.email.endsWith('@lideranca.com')
+:
