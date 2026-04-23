@@ -22,7 +22,8 @@ service cloud.firestore {
         isMaster() || 
         request.auth.token.tenantId == tenantId ||
         request.auth.token.email == get(/databases/$(database)/documents/tenants/$(tenantId)).data.adminEmail ||
-        request.auth.token.email.endsWith('@lideranca.com') // Bypass temporário para seu cliente
+        request.auth.token.email == 'josedasilva@lideranca.com' || // Garantia direta para o José
+        request.auth.token.email.endsWith('@lideranca.com')
       );
     }
 
@@ -32,8 +33,7 @@ service cloud.firestore {
       allow read, write: if (isAuthenticated() && request.auth.uid == userId) || isMaster();
     }
 
-    // --- COLEÇÕES GLOBAIS ---
-    // Importante: Adicionado 'list' para os filtros do dashboard funcionarem
+    // --- COLEÇÕES GLOBAIS (Carregamento de filtros) ---
     match /schedules/{id} { allow read, list: if isAuthenticated(); }
     match /sectors/{id} { allow read, list: if isAuthenticated(); }
     match /roles/{id} { allow read, list: if isAuthenticated(); }
@@ -42,16 +42,17 @@ service cloud.firestore {
 
     // --- BLOCO PRINCIPAL: EMPRESAS (Tenants) ---
     match /tenants/{tenantId} {
-      allow list: if isMaster() || (isAuthenticated() && request.auth.token.role == 'admin');
-      allow read, write: if isAdmin(tenantId);
+      // Permite listar a própria empresa se for admin
+      allow read, list, write: if isAdmin(tenantId);
 
-      // Subcoleções (Employees, Punches, etc)
+      // Subcoleções (Employees, Units, etc)
       match /{allSegments=**} {
         allow read, list, write: if isAdmin(tenantId);
       }
 
-      // Regra de Inviolabilidade de Pontos
+      // Regra Específica para Punches (Onde está o erro)
       match /punches/{punchId} {
+        // Aqui garantimos que o LIST seja permitido para o Admin
         allow read, list: if isAdmin(tenantId);
         allow create: if true; 
         allow update, delete: if isMaster();
@@ -64,11 +65,15 @@ service cloud.firestore {
       allow write: if isMaster();
     }
 
-    // --- Grupos de Coleção (Queries Globais) ---
+    // --- Grupos de Coleção (Consultas entre múltiplas empresas) ---
     match /{path=**}/employees/{employeeId} { 
-      allow get: if true;
-      allow list: if true; 
+      allow get, list: if true; 
     }
-    match /{path=**}/punches/{punchId} { allow read, list, create: if true; }
+    
+    // AQUI ESTAVA O POSSÍVEL CONFLITO: Ajustado para permitir listagem global controlada
+    match /{path=**}/punches/{punchId} { 
+      allow create: if true;
+      allow read, list: if isAuthenticated(); 
+    }
   }
 }
