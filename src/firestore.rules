@@ -2,7 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // --- Funções de Apoio ---
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -16,19 +15,19 @@ service cloud.firestore {
       );
     }
 
-    // Lógica SaaS: Admin da própria empresa
+    // Lógica para Administradores de Empresa
     function isAdmin(tenantId) {
       return isAuthenticated() && (
         isMaster() || 
         request.auth.token.tenantId == tenantId ||
-        request.auth.token.email == 'josedasilva@lideranca.com' || 
+        request.auth.token.email == 'josedasilva@lideranca.com' ||
         tenantId == '31676785000140' ||
-        // Forma correta de checar domínio no Firestore (sem usar endsWith):
-        request.auth.token.email.matches('.*@lideranca.com$')
+        // BUSCA DINÂMICA: Verifica se o documento do usuário logado contém o tenantId da empresa
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == tenantId
       );
     }
 
-    // --- Regras para USUÁRIOS ---
+    // --- USUÁRIOS ---
     match /users/{userId} {
       allow list: if isMaster();
       allow read, write: if (isAuthenticated() && request.auth.uid == userId) || isMaster();
@@ -41,15 +40,17 @@ service cloud.firestore {
     match /scales/{id} { allow read, list: if isAuthenticated(); }
     match /branches/{id} { allow read, list: if isAuthenticated(); }
 
-    // --- BLOCO PRINCIPAL: EMPRESAS (Tenants) ---
+    // --- TENANTS (AQUI ESTÁ O ACESSO DO JOSÉ) ---
     match /tenants/{tenantId} {
+      // Permite que o Admin veja os dados da empresa (Logo, Configurações)
       allow read, list, write: if isAdmin(tenantId);
 
+      // Permite que o Admin gerencie as subcoleções (Punches, Employees, etc)
       match /{allSegments=**} {
         allow read, list, write: if isAdmin(tenantId);
       }
 
-      // Regra Inviolável de Pontos
+      // Regra específica para Punches (Proteção extra)
       match /punches/{id} {
         allow read, list: if isAdmin(tenantId);
         allow create: if true; 
@@ -57,17 +58,13 @@ service cloud.firestore {
       }
     }
 
-    // --- Regras Globais Fallback ---
+    // Fallback e Consultas Globais
     match /{collectionName}/{docId} {
       allow read: if collectionName != 'users' && collectionName != 'tenants';
       allow write: if isMaster();
     }
 
-    // --- Grupos de Coleção (Consultas Globais) ---
-    match /{path=**}/employees/{id} { 
-      allow get, list: if true; 
-    }
-    
+    match /{path=**}/employees/{id} { allow get, list: if true; }
     match /{path=**}/punches/{id} { 
       allow create: if true;
       allow read, list: if isAuthenticated(); 
