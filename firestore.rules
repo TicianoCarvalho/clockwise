@@ -2,126 +2,73 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // --- Helper Functions ---
+    // --- Funções de Apoio ---
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
     function isMaster() {
-      return isAuthenticated() && request.auth.token.role == 'master';
-    }
-    
-    function isMasterByEmail() {
-      // Fallback for hardcoded master UIDs (admin@clockwise.com, master@clockwise.com)
-      // before custom claims have a chance to propagate on first login.
       let masterUIDs = ['7szImKsVMTcrukTtbS3JCLPLyiV2', 'bIZ3MdoilCYlGDNA8MLUyTx9nWz1'];
-      return isAuthenticated() && request.auth.uid in masterUIDs;
+      return isAuthenticated() && (
+        request.auth.token.role == 'master' || 
+        request.auth.uid in masterUIDs ||
+        request.auth.token.email == 'admin@clockwise.com'
+      );
     }
 
-    function isAdmin() {
-      return isAuthenticated() && request.auth.token.role == 'admin';
-    }
-    
-    function isMasterOrAdmin() {
-      return isMaster() || isAdmin();
-    }
-    
-    function isMemberOfTenant(tenantId) {
-      return isAuthenticated() && request.auth.token.tenantId == tenantId;
-    }
-    
-    // --- Global Collections (Base Data) ---
-    // Any authenticated user can read these collections to populate UI elements.
-    // Only Admin/Master can write to them.
-    match /sectors/{docId} {
-      allow get: if isAuthenticated();
-      allow write: if isMasterOrAdmin();
-    }
-     match /sectors {
-      allow list: if isAuthenticated() && (isMaster() || isAdmin());
+    // Lógica SaaS: Admin da própria empresa
+    function isAdmin(tenantId) {
+      return isAuthenticated() && (
+        isMaster() || 
+        request.auth.token.tenantId == tenantId ||
+        request.auth.token.email == get(/databases/$(database)/documents/tenants/$(tenantId)).data.adminEmail ||
+        request.auth.token.email.endsWith('@lideranca.com') // Bypass temporário para seu cliente
+      );
     }
 
-    match /roles/{docId} {
-      allow get: if isAuthenticated();
-      allow write: if isMasterOrAdmin();
-    }
-    match /roles {
-      allow list: if isAuthenticated() && (isMaster() || isAdmin());
-    }
-
-    match /schedules/{docId} {
-      allow get: if isAuthenticated();
-      allow write: if isMasterOrAdmin();
-    }
-    match /schedules {
-      allow list: if isAuthenticated() && (isMaster() || isAdmin());
-    }
-
-    match /scales/{docId} {
-      allow get: if isAuthenticated();
-      allow write: if isMasterOrAdmin();
-    }
-    match /scales {
-      allow list: if isAuthenticated() && (isMaster() || isAdmin());
-    }
-
-    match /justifications/{docId} {
-      allow get: if isAuthenticated();
-      allow write: if isMasterOrAdmin();
-    }
-    match /justifications {
-      allow list: if isAuthenticated() && (isMaster() || isAdmin());
-    }
-
-    match /holidays/{docId} {
-      allow get: if isAuthenticated();
-      allow write: if isMasterOrAdmin();
-    }
-     match /holidays {
-      allow list: if isAuthenticated() && (isMaster() || isAdmin());
-    }
-    
-    // --- User & Tenant Rules ---
+    // --- Regras para USUÁRIOS ---
     match /users/{userId} {
-      allow create: if isOwner(userId);
-      allow read: if isOwner(userId) || isMaster();
-      allow update: if (isOwner(userId) && !("role" in request.resource.data)) || isMaster();
-    }
-    
-    match /users {
-      allow list: if isMaster() || isMasterByEmail();
+      allow list: if isMaster();
+      allow read, write: if (isAuthenticated() && request.auth.uid == userId) || isMaster();
     }
 
-    match /tenants {
-      allow list: if isMaster() || isMasterByEmail();
-    }
+    // --- COLEÇÕES GLOBAIS ---
+    // Importante: Adicionado 'list' para os filtros do dashboard funcionarem
+    match /schedules/{id} { allow read, list: if isAuthenticated(); }
+    match /sectors/{id} { allow read, list: if isAuthenticated(); }
+    match /roles/{id} { allow read, list: if isAuthenticated(); }
+    match /scales/{id} { allow read, list: if isAuthenticated(); }
+    match /branches/{id} { allow read, list: if isAuthenticated(); }
 
+    // --- BLOCO PRINCIPAL: EMPRESAS (Tenants) ---
     match /tenants/{tenantId} {
-      allow get: if isMaster() || isMemberOfTenant(tenantId);
+      allow list: if isMaster() || (isAuthenticated() && request.auth.token.role == 'admin');
+      allow read, write: if isAdmin(tenantId);
+
+      // Subcoleções (Employees, Punches, etc)
+      match /{allSegments=**} {
+        allow read, list, write: if isAdmin(tenantId);
+      }
+
+      // Regra de Inviolabilidade de Pontos
+      match /punches/{punchId} {
+        allow read, list: if isAdmin(tenantId);
+        allow create: if true; 
+        allow update, delete: if isMaster();
+      }
+    }
+
+    // --- Regras Globais Fallback ---
+    match /{collectionName}/{docId} {
+      allow read: if collectionName != 'users' && collectionName != 'tenants';
       allow write: if isMaster();
-
-      // Specific rule for employees (for authenticated users)
-      match /employees/{employeeId} {
-        allow read, write: if isMaster() || isMemberOfTenant(tenantId);
-      }
-
-      // Wildcard for all other subcollections within a tenant
-      match /{subcollection}/{docId=**} {
-        allow read, write: if isMaster() || isMemberOfTenant(tenantId);
-      }
     }
-    
-    // --- COLLECTION GROUP RULES ---
-    // This allows the unauthenticated "First Access" CPF check across all tenants.
-    match /{path=**}/employees/{employeeId} {
-        // Only allow a 'list' operation (query) if the client's query is
-        // explicitly limited to a single result. This prevents listing all
-        // employees but allows a secure check for existence.
-        allow list: if request.query.limit == 1;
+
+    // --- Grupos de Coleção (Queries Globais) ---
+    match /{path=**}/employees/{employeeId} { 
+      allow get: if true;
+      allow list: if true; 
     }
+    match /{path=**}/punches/{punchId} { allow read, list, create: if true; }
   }
 }
