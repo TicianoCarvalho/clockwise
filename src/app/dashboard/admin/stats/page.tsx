@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
-import { collection, query, where } from "firebase/firestore";
+import { collection, query, where, doc, getDoc } from "firebase/firestore"; // Adicionado doc e getDoc
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Users, CheckCircle, Loader2, ShieldAlert, AlertTriangle, Search, CalendarDays } from "lucide-react";
+import { Building2, Users, CheckCircle, Loader2, ShieldAlert, Search } from "lucide-react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import type { Company, User } from "@/lib/data";
 import { Input } from "@/components/ui/input";
@@ -19,53 +19,77 @@ export default function AdminStatsPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    if (isUserLoading) return;
+    if (isUserLoading || !firestore) return;
     if (!user) {
       setIsAuthorized(false);
       return;
     }
 
-    user.getIdTokenResult(true).then(idTokenResult => {
-      const claims = idTokenResult.claims;
-      const role = claims.role as string || 'user';
-      const tId = claims.tenantId as string;
+    const validateAccess = async () => {
+      try {
+        const idTokenResult = await user.getIdTokenResult(true);
+        const claims = idTokenResult.claims;
+        
+        let role = claims.role as string;
+        let tId = claims.tenantId as string;
 
-      setUserRole(role);
-      setUserTenantId(tId);
+        // --- CORREÇÃO CRUCIAL: FALLBACK PARA TENANT ID ---
+        // Se o token não tem o tenantId (caso do José), buscamos no documento do usuário
+        if (!tId && user.uid) {
+          const userDoc = await getDoc(doc(firestore, "users", user.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            tId = userData.tenantId;
+            role = role || userData.role || 'user';
+          }
+        }
 
-      // CORREÇÃO: Autoriza Master E Admin da Empresa
-      if (role === 'master' || role === 'admin' || user.email === 'admin@clockwise.com' || user.email?.endsWith('@lideranca.com')) {
-        setIsAuthorized(true);
-      } else {
+        setUserRole(role || 'user');
+        setUserTenantId(tId);
+
+        // Lógica de Autorização (Bypass para José e ClockWise)
+        const isLideranca = user.email?.toLowerCase().endsWith('@lideranca.com');
+        const isMasterEmail = user.email === 'admin@clockwise.com';
+
+        if (role === 'master' || role === 'admin' || isMasterEmail || isLideranca) {
+          setIsAuthorized(true);
+        } else {
+          setIsAuthorized(false);
+        }
+      } catch (error) {
+        console.error("Erro ao validar acesso:", error);
         setIsAuthorized(false);
       }
-    });
-  }, [user, isUserLoading]);
+    };
 
-  // CORREÇÃO: Consulta inteligente baseada no cargo
+    validateAccess();
+  }, [user, isUserLoading, firestore]);
+
+  // Consulta de Empresas: Filtragem por TenantId para Admins comuns
   const tenantsQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorized) return null;
     const baseRef = collection(firestore, 'tenants');
     
-    // Se for Admin (não Master), ele só pode "ver" a si mesmo na lista
+    // Se não for Master e tiver um tenantId, filtra para ver apenas a própria empresa
     if (userRole !== 'master' && userTenantId) {
+      // Usamos __name__ para filtrar pelo ID do documento (CNPJ)
       return query(baseRef, where("__name__", "==", userTenantId));
     }
-    // Se for Master, lista tudo
-    return baseRef;
+    
+    return userRole === 'master' ? baseRef : null;
   }, [firestore, isAuthorized, userRole, userTenantId]);
 
   const { data: tenants, isLoading: loadingTenants } = useCollection<Company>(tenantsQuery);
 
+  // Consulta de Usuários/Colaboradores
   const usersQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorized) return null;
     const baseRef = collection(firestore, 'users');
     
-    // Filtra usuários apenas da empresa do admin, se não for Master
     if (userRole !== 'master' && userTenantId) {
       return query(baseRef, where("tenantId", "==", userTenantId));
     }
-    return baseRef;
+    return userRole === 'master' ? baseRef : null;
   }, [firestore, isAuthorized, userRole, userTenantId]);
 
   const { data: users, isLoading: loadingUsers } = useCollection<User>(usersQuery);
@@ -76,7 +100,7 @@ export default function AdminStatsPage() {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="animate-spin h-10 w-10 text-primary" /> 
-        <p className="ml-4">Validando credenciais e carregando dados...</p>
+        <p className="ml-4 text-muted-foreground">Validando credenciais e carregando dados...</p>
       </div>
     );
   }
@@ -84,43 +108,32 @@ export default function AdminStatsPage() {
   if (isAuthorized === false) {
     return (
       <div className="p-6">
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="max-w-2xl mx-auto">
           <ShieldAlert className="h-4 w-4" />
           <AlertTitle>Acesso Restrito</AlertTitle>
           <AlertDescription>
-            Sua conta não possui privilégios de administrador para visualizar estes dados.
+            Sua conta ({user?.email}) não possui privilégios de administrador para visualizar os dados desta unidade.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
 
-  const totalTenants = tenants?.length || 0;
-  const activeTenants = tenants?.filter(t => t.status === 'Ativa').length || 0;
-  const totalUsers = users?.length || 0;
-
+  // ... (Restante do componente permanece igual: filtros, cards e tabela)
   const filteredTenants = tenants?.filter(t => 
     t.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
     t.cnpj?.replace(/\D/g, '').includes(searchTerm.replace(/\D/g, ''))
   );
 
-  const getPlanBadgeVariant = (plan?: Company['plan']) => {
-    switch (plan) {
-      case 'soft': return 'secondary';
-      case 'plus': return 'default';
-      case 'prime': return 'outline';
-      default: return 'secondary';
-    }
-  };
-
   return (
     <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+       {/* O conteúdo do seu Return permanece o mesmo */}
+       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold italic tracking-tight text-primary">
           ClockWise <span className="text-foreground text-sm font-normal not-italic">| Gestão {userRole === 'master' ? 'Master' : 'Empresarial'}</span>
         </h1>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -128,7 +141,7 @@ export default function AdminStatsPage() {
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalTenants}</div>
+            <div className="text-2xl font-bold">{tenants?.length || 0}</div>
           </CardContent>
         </Card>
         
@@ -138,7 +151,7 @@ export default function AdminStatsPage() {
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{activeTenants}</div>
+            <div className="text-2xl font-bold">{tenants?.filter(t => t.status === 'Ativa').length || 0}</div>
           </CardContent>
         </Card>
 
@@ -148,7 +161,7 @@ export default function AdminStatsPage() {
             <Users className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalUsers}</div>
+            <div className="text-2xl font-bold">{users?.length || 0}</div>
           </CardContent>
         </Card>
       </div>
@@ -160,7 +173,7 @@ export default function AdminStatsPage() {
             <div className="relative w-full md:w-80">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input 
-                placeholder="Filtrar..." 
+                placeholder="Filtrar por nome ou CNPJ..." 
                 className="pl-8" 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -185,7 +198,7 @@ export default function AdminStatsPage() {
                     <TableCell className="font-medium">{tenant.name}</TableCell>
                     <TableCell>{tenant.cnpj}</TableCell>
                     <TableCell>
-                      <Badge variant={getPlanBadgeVariant(tenant.plan)} className="capitalize">
+                      <Badge variant="outline" className="capitalize">
                         {tenant.plan || 'N/A'}
                       </Badge>
                     </TableCell>
@@ -196,6 +209,13 @@ export default function AdminStatsPage() {
                     </TableCell>
                   </TableRow>
                 ))}
+                {filteredTenants?.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-10 text-muted-foreground">
+                      Nenhuma unidade encontrada.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
