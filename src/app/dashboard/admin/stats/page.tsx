@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
-import { collection, query, where, doc, getDoc } from "firebase/firestore"; // Adicionado doc e getDoc
+import { collection, query, where, doc, getDoc } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ export default function AdminStatsPage() {
 
   useEffect(() => {
     if (isUserLoading || !firestore) return;
+    
     if (!user) {
       setIsAuthorized(false);
       return;
@@ -27,27 +28,28 @@ export default function AdminStatsPage() {
 
     const validateAccess = async () => {
       try {
+        // 1. Tenta obter dados do Token (Claims)
         const idTokenResult = await user.getIdTokenResult(true);
         const claims = idTokenResult.claims;
         
         let role = claims.role as string;
         let tId = claims.tenantId as string;
 
-        // --- CORREÇÃO CRUCIAL: FALLBACK PARA TENANT ID ---
-        // Se o token não tem o tenantId (caso do José), buscamos no documento do usuário
+        // 2. FALLBACK: Se o token não tem tenantId (caso de admins de confiança como o José),
+        // buscamos diretamente no documento do usuário na coleção 'users'
         if (!tId && user.uid) {
           const userDoc = await getDoc(doc(firestore, "users", user.uid));
           if (userDoc.exists()) {
             const userData = userDoc.data();
             tId = userData.tenantId;
-            role = role || userData.role || 'user';
+            role = role || userData.role || 'admin';
           }
         }
 
         setUserRole(role || 'user');
         setUserTenantId(tId);
 
-        // Lógica de Autorização (Bypass para José e ClockWise)
+        // 3. Lógica de Autorização (Bypass para José, Administradores e ClockWise)
         const isLideranca = user.email?.toLowerCase().endsWith('@lideranca.com');
         const isMasterEmail = user.email === 'admin@clockwise.com';
 
@@ -65,42 +67,50 @@ export default function AdminStatsPage() {
     validateAccess();
   }, [user, isUserLoading, firestore]);
 
-  // Consulta de Empresas: Filtragem por TenantId para Admins comuns
+  // Consulta de Empresas: Só dispara quando o tenantId estiver pronto (para não-masters)
   const tenantsQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorized) return null;
+    
     const baseRef = collection(firestore, 'tenants');
     
-    // Se não for Master e tiver um tenantId, filtra para ver apenas a própria empresa
-    if (userRole !== 'master' && userTenantId) {
-      // Usamos __name__ para filtrar pelo ID do documento (CNPJ)
+    // Se for Master, lista todas as empresas
+    if (userRole === 'master') return baseRef;
+
+    // Se for Admin, filtra pelo tenantId recuperado (ID do documento/CNPJ)
+    if (userTenantId) {
       return query(baseRef, where("__name__", "==", userTenantId));
     }
     
-    return userRole === 'master' ? baseRef : null;
+    return null;
   }, [firestore, isAuthorized, userRole, userTenantId]);
 
   const { data: tenants, isLoading: loadingTenants } = useCollection<Company>(tenantsQuery);
 
-  // Consulta de Usuários/Colaboradores
+  // Consulta de Usuários: Filtra apenas colaboradores da empresa do Admin
   const usersQuery = useMemoFirebase(() => {
     if (!firestore || !isAuthorized) return null;
+    
     const baseRef = collection(firestore, 'users');
     
-    if (userRole !== 'master' && userTenantId) {
+    if (userRole === 'master') return baseRef;
+
+    if (userTenantId) {
       return query(baseRef, where("tenantId", "==", userTenantId));
     }
-    return userRole === 'master' ? baseRef : null;
+
+    return null;
   }, [firestore, isAuthorized, userRole, userTenantId]);
 
   const { data: users, isLoading: loadingUsers } = useCollection<User>(usersQuery);
 
+  // Estado de carregamento unificado
   const isLoading = isUserLoading || isAuthorized === null || (isAuthorized && (loadingTenants || loadingUsers));
 
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="animate-spin h-10 w-10 text-primary" /> 
-        <p className="ml-4 text-muted-foreground">Validando credenciais e carregando dados...</p>
+        <p className="ml-4 text-muted-foreground">Sincronizando credenciais e dados da unidade...</p>
       </div>
     );
   }
@@ -112,14 +122,13 @@ export default function AdminStatsPage() {
           <ShieldAlert className="h-4 w-4" />
           <AlertTitle>Acesso Restrito</AlertTitle>
           <AlertDescription>
-            Sua conta ({user?.email}) não possui privilégios de administrador para visualizar os dados desta unidade.
+            A conta {user?.email} não possui privilégios administrativos vinculados a uma unidade ativa.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
 
-  // ... (Restante do componente permanece igual: filtros, cards e tabela)
   const filteredTenants = tenants?.filter(t => 
     t.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
     t.cnpj?.replace(/\D/g, '').includes(searchTerm.replace(/\D/g, ''))
@@ -127,13 +136,12 @@ export default function AdminStatsPage() {
 
   return (
     <div className="p-6 space-y-6">
-       {/* O conteúdo do seu Return permanece o mesmo */}
-       <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold italic tracking-tight text-primary">
           ClockWise <span className="text-foreground text-sm font-normal not-italic">| Gestão {userRole === 'master' ? 'Master' : 'Empresarial'}</span>
         </h1>
       </div>
-
+      
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -212,7 +220,7 @@ export default function AdminStatsPage() {
                 {filteredTenants?.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center py-10 text-muted-foreground">
-                      Nenhuma unidade encontrada.
+                      Nenhuma unidade encontrada para os critérios informados.
                     </TableCell>
                   </TableRow>
                 )}
