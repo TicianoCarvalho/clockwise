@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Edit, PlusCircle, Trash2, Loader2, Scaling } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,14 +35,30 @@ import type { Scale } from "@/lib/data";
 import { Badge } from "@/components/ui/badge";
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
-import { collection, doc, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
+// Importes adicionais para filtro (query e where)
+import { collection, doc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp } from "firebase/firestore";
 
 export default function ScalesPage() {
     const { toast } = useToast();
     const { firestore } = useFirebase();
-    const { userRole } = useAuthContext();
+    // Recuperando userData para acessar o tenantId
+    const { userRole, userData } = useAuthContext(); 
 
-    const scalesQuery = useMemoFirebase(() => (firestore && userRole) ? collection(firestore, 'scales') : null, [firestore, userRole]);
+    // Query corrigida para filtrar pelo Tenant do usuário logado
+    const scalesQuery = useMemoFirebase(() => {
+        if (firestore && userRole && userData?.tenantId) {
+            // Se for Master, pode listar tudo, caso contrário, filtra pela empresa
+            if (userRole === 'master') {
+                return collection(firestore, 'scales');
+            }
+            return query(
+                collection(firestore, 'scales'), 
+                where('tenantId', '==', userData.tenantId)
+            );
+        }
+        return null;
+    }, [firestore, userRole, userData?.tenantId]);
+
     const { data: scales, isLoading: loading } = useCollection<Scale>(scalesQuery);
     
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -61,11 +77,11 @@ export default function ScalesPage() {
     };
 
     const handleSubmitScale = async (data: Omit<Scale, 'id'>) => {
-        if (!firestore) {
+        if (!firestore || !userData?.tenantId) {
             toast({
                 variant: 'destructive',
-                title: 'Erro de Conexão',
-                description: 'Não foi possível conectar ao banco de dados.',
+                title: 'Erro de Permissão',
+                description: 'Não foi possível identificar sua empresa ou conexão.',
             });
             return;
         }
@@ -76,13 +92,20 @@ export default function ScalesPage() {
                 const docRef = doc(firestore, 'scales', editingScale.id);
                 await updateDoc(docRef, data);
             } else {
+                // Injeta o tenantId no novo documento para cumprir as regras de segurança
+                const payload = {
+                    ...data,
+                    tenantId: userData.tenantId,
+                    createdAt: serverTimestamp()
+                };
                 const collectionRef = collection(firestore, 'scales');
-                await addDoc(collectionRef, data);
+                await addDoc(collectionRef, payload);
             }
             toast({ title: `Escala ${isEditing ? 'atualizada' : 'adicionada'}!`, description: `A escala "${data.name}" foi salva com sucesso.` });
             setIsDialogOpen(false);
         } catch (error: any) {
-             toast({ variant: "destructive", title: "Erro", description: "Não foi possível salvar a escala." });
+             console.error("Erro ao salvar:", error);
+             toast({ variant: "destructive", title: "Erro", description: "Não foi possível salvar a escala. Verifique as permissões." });
         }
     };
 
