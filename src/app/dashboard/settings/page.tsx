@@ -15,6 +15,12 @@ const settings = [
         href: "/dashboard/settings/users",
         icon: Users,
     },
+    {
+        title: "Suporte e Canais",
+        description: "Configure WhatsApp, E-mail e Central de Ajuda.",
+        href: "/dashboard/settings/support", // Caminho que chama a sua API v1
+        icon: UploadCloud,
+    },
 ]
 
 export default function SettingsPage() {
@@ -41,7 +47,7 @@ export default function SettingsPage() {
                                     </div>
                                 </div>
                             </CardHeader>
-                            <CardContent className="flex-grow flex items-end justify-end">
+                            <CardContent className="flex-grow flex items-end justify-end pt-0">
                                 <ArrowRight className="h-5 w-5 text-muted-foreground" />
                             </CardContent>
                         </Card>

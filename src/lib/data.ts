@@ -58,34 +58,57 @@ export interface Employee {
   avatarUrl?: string;           
   status: 'Ativo' | 'Inativo';
   workModel?: 'standard' | 'hourly';
+  isTrustPosition?: boolean; // Adicionado para lógica de cargo de confiança
 }
 
-// --- BUSCAS GLOBAIS (Root Collections) ---
+// --- BUSCAS POR TENANT (Estrutura Isolada) ---
 
-export const getSchedules = async () => {
-  const snap = await adminDb.collection('schedules').get();
+export const getSchedules = async (tenantId: string) => {
+  const snap = await adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('schedules')
+    .get();
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Schedule[];
 };
 
-export const getSectors = async () => {
-  const snap = await adminDb.collection('sectors').get();
+export const getSectors = async (tenantId: string) => {
+  const snap = await adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('sectors')
+    .get();
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Sector[];
 };
 
-export const getScales = async () => {
-  const snap = await adminDb.collection('scales').get();
+export const getScales = async (tenantId: string) => {
+  const snap = await adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('scales')
+    .get();
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Scale[];
 };
 
 // --- FILIAIS (BRANCHES) ---
+
 export const getBranches = async (tenantId: string) => {
-  const snap = await adminDb.collection('branches').where('tenantId', '==', tenantId).get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+  const snap = await adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('branches')
+    .get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
 // --- LOCAIS DE MARCAÇÃO (LOCATIONS) ---
+
 export const getLocations = async (tenantId: string) => {
-  const snap = await adminDb.collection('tenants').doc(tenantId).collection('locations').get();
+  const snap = await adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('locations')
+    .get();
   return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Location[];
 };
 
@@ -100,22 +123,36 @@ export const getEmployees = async (tenantId: string) => {
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Employee[];
 };
 
+export const getEmployeeById = async (tenantId: string, employeeId: string) => {
+  const doc = await adminDb
+    .collection('tenants')
+    .doc(tenantId)
+    .collection('employees')
+    .doc(employeeId)
+    .get();
+  return doc.exists ? { id: doc.id, ...doc.data() } as Employee : null;
+};
+
 export const addEmployee = async (tenantId: string, data: Partial<Employee>) => {
+  // Normaliza o CPF para usar como ID do documento
   const docId = data.cpf ? data.cpf.replace(/\D/g, "") : undefined;
   
+  const payload = {
+    ...data,
+    tenantId, // Garante que o ID do cliente esteja no documento
+    createdAt: new Date().toISOString()
+  };
+
   if (docId) {
     return adminDb
       .collection('tenants')
       .doc(tenantId)
       .collection('employees')
       .doc(docId)
-      .set({
-        ...data,
-        createdAt: new Date().toISOString()
-      });
+      .set(payload);
   }
   
-  return adminDb.collection('tenants').doc(tenantId).collection('employees').add(data);
+  return adminDb.collection('tenants').doc(tenantId).collection('employees').add(payload);
 };
 
 export const updateEmployee = async (tenantId: string, employeeId: string, data: Partial<Employee>) => {

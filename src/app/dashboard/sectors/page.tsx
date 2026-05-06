@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Edit, PlusCircle, Trash2, Loader2, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,14 +34,22 @@ import { useToast } from "@/hooks/use-toast";
 import type { Sector } from "@/lib/data";
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
-import { collection, doc, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, doc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp } from "firebase/firestore";
 
 export default function SectorsPage() {
     const { toast } = useToast();
     const { firestore } = useFirebase();
-    const { userRole } = useAuthContext();
+    const { userData } = useAuthContext(); // Pegando o tenantId do contexto de usuário
 
-    const sectorsQuery = useMemoFirebase(() => (firestore && userRole) ? collection(firestore, 'sectors') : null, [firestore, userRole]);
+    // 1. Query filtrada por Tenant
+    const sectorsQuery = useMemoFirebase(() => {
+        if (!firestore || !userData?.tenantId) return null;
+        return query(
+            collection(firestore, 'sectors'), 
+            where('tenantId', '==', userData.tenantId)
+        );
+    }, [firestore, userData?.tenantId]);
+
     const { data: sectors, isLoading: loading } = useCollection<Sector>(sectorsQuery);
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -59,35 +67,46 @@ export default function SectorsPage() {
         setIsDialogOpen(true);
     };
 
-    const handleSubmitSector = async (data: Omit<Sector, 'id'>) => {
-        if (!firestore) {
+    // 2. Submit Handler com injeção de TenantId
+    const handleSubmitSector = async (formData: Omit<Sector, 'id'>) => {
+        if (!firestore || !userData?.tenantId) {
             toast({
                 variant: 'destructive',
-                title: 'Erro de Conexão',
-                description: 'Não foi possível conectar ao banco de dados.',
+                title: 'Erro de Permissão',
+                description: 'ID da empresa não identificado.',
             });
             return;
         }
+
         const isEditing = !!editingSector;
 
         try {
+            const sectorData = {
+                ...formData,
+                tenantId: userData.tenantId, // Vincula o setor à empresa atual
+                updatedAt: serverTimestamp(),
+            };
+
             if (isEditing && editingSector?.id) {
                 const docRef = doc(firestore, 'sectors', editingSector.id);
-                await updateDoc(docRef, data);
+                await updateDoc(docRef, sectorData);
             } else {
                 const collectionRef = collection(firestore, 'sectors');
-                await addDoc(collectionRef, data);
+                await addDoc(collectionRef, {
+                    ...sectorData,
+                    createdAt: serverTimestamp()
+                });
             }
-            toast({ title: `Setor ${isEditing ? 'atualizado' : 'adicionado'}!`, description: `O setor "${data.name}" foi salvo com sucesso.` });
+            
+            toast({ 
+                title: `Setor ${isEditing ? 'atualizado' : 'adicionado'}!`, 
+                description: `O setor "${formData.name}" foi salvo com sucesso.` 
+            });
             setIsDialogOpen(false);
         } catch (error: any) {
-             toast({ variant: "destructive", title: "Erro", description: "Não foi possível salvar o setor." });
+            console.error(error);
+            toast({ variant: "destructive", title: "Erro", description: "Não foi possível salvar o setor." });
         }
-    };
-
-    const handleOpenConfirmDeleteDialog = (sector: Sector) => {
-        setDeletingSector(sector);
-        setIsConfirmDeleteDialogOpen(true);
     };
 
     const handleDeleteSectorConfirm = async () => {
@@ -97,7 +116,7 @@ export default function SectorsPage() {
             await deleteDoc(docRef);
             toast({ title: "Setor removido!", description: `O setor "${deletingSector.name}" foi removido com sucesso.` });
         } catch (error: any) {
-             toast({ variant: "destructive", title: "Erro", description: "Não foi possível remover o setor." });
+            toast({ variant: "destructive", title: "Erro", description: "Não foi possível remover o setor." });
         }
         setIsConfirmDeleteDialogOpen(false);
         setDeletingSector(null);
@@ -147,7 +166,7 @@ export default function SectorsPage() {
                                     <Edit className="h-4 w-4" />
                                     <span className="sr-only">Editar</span>
                                 </Button>
-                                <Button variant="ghost" size="icon" className="hover:text-destructive" onClick={() => handleOpenConfirmDeleteDialog(sector)}>
+                                <Button variant="ghost" size="icon" className="hover:text-destructive" onClick={() => (setDeletingSector(sector), setIsConfirmDeleteDialogOpen(true))}>
                                     <Trash2 className="h-4 w-4" />
                                     <span className="sr-only">Remover</span>
                                 </Button>
@@ -160,12 +179,14 @@ export default function SectorsPage() {
             )}
         </CardContent>
       </Card>
+
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <SectorForm 
             sector={editingSector}
             onSubmit={handleSubmitSector}
         />
       </Dialog>
+
       <AlertDialog open={isConfirmDeleteDialogOpen} onOpenChange={setIsConfirmDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

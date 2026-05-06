@@ -18,12 +18,12 @@ import { Badge } from "@/components/ui/badge";
 // Firebase Imports
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
-import { collection, doc, setDoc, updateDoc, query } from "firebase/firestore";
+import { collection, doc, setDoc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
 
 export default function EmployeesPage() {
   const { toast } = useToast();
   const { firestore } = useFirebase();
-  const { userRole, tenantId } = useAuthContext();
+  const { userRole, userData } = useAuthContext(); // Usando userData para pegar o tenantId consistente
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -32,9 +32,9 @@ export default function EmployeesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(12);
 
-  // 1. Fetch de Empresas (Para Master)
+  // 1. Fetch de Empresas (Apenas para Master poder trocar de contexto)
   const masterTenantsQuery = useMemoFirebase(() => 
-    (firestore && userRole === 'master') ? query(collection(firestore, 'tenants')) : null, 
+    (firestore && userRole === 'master') ? collection(firestore, 'tenants') : null, 
   [firestore, userRole]);
   const { data: tenants, isLoading: tenantsLoading } = useCollection<Company>(masterTenantsQuery);
 
@@ -46,12 +46,17 @@ export default function EmployeesPage() {
     }
   }, [userRole, tenants, selectedTenantId]);
 
-  const finalTenantId = userRole === 'master' ? selectedTenantId : tenantId;
+  // Define qual tenantId será usado para as queries abaixo
+  const finalTenantId = userRole === 'master' ? selectedTenantId : userData?.tenantId;
   
-  // 2. Fetch de Colaboradores
-  const employeesQuery = useMemoFirebase(() => 
-    (firestore && finalTenantId) ? collection(firestore, 'tenants', finalTenantId, 'employees') : null, 
-  [firestore, finalTenantId]);
+  // 2. Query de Colaboradores com FILTRO DE TENANT (Essencial para permissões)
+  const employeesQuery = useMemoFirebase(() => {
+    if (!firestore || !finalTenantId) return null;
+    return query(
+        collection(firestore, 'employees'), 
+        where('tenantId', '==', finalTenantId)
+    );
+  }, [firestore, finalTenantId]);
   
   const { data: employeesData, isLoading: employeesLoading } = useCollection<Employee>(employeesQuery);
   const employees = useMemo(() => employeesData || [], [employeesData]);
@@ -63,19 +68,25 @@ export default function EmployeesPage() {
   const planLimit = 20; 
   const isLimitReached = activeEmployeesCount >= planLimit;
 
-  // 3. Queries de Apoio (AJUSTADAS PARA TENANT E GLOBAL)
+  // 3. Queries de Apoio (Filtro por Tenant em locais e Global/Tenant em setores/escalas)
   const locationsQuery = useMemoFirebase(() => 
-    (firestore && finalTenantId) ? collection(firestore, 'tenants', finalTenantId, 'locations') : null, 
+    (firestore && finalTenantId) ? query(collection(firestore, 'locations'), where('tenantId', '==', finalTenantId)) : null, 
   [firestore, finalTenantId]);
   const { data: locations } = useCollection<Location>(locationsQuery);
   
-  const sectorsQuery = useMemoFirebase(() => firestore ? collection(firestore, 'sectors') : null, [firestore]);
+  const sectorsQuery = useMemoFirebase(() => 
+    (firestore && finalTenantId) ? query(collection(firestore, 'sectors'), where('tenantId', '==', finalTenantId)) : null, 
+  [firestore, finalTenantId]);
   const { data: sectors } = useCollection<Sector>(sectorsQuery);
 
-  const schedulesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'schedules') : null, [firestore]);
+  const schedulesQuery = useMemoFirebase(() => 
+    (firestore && finalTenantId) ? query(collection(firestore, 'schedules'), where('tenantId', '==', finalTenantId)) : null, 
+  [firestore, finalTenantId]);
   const { data: schedules } = useCollection<Schedule>(schedulesQuery);
 
-  const scalesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'scales') : null, [firestore]);
+  const scalesQuery = useMemoFirebase(() => 
+    (firestore && finalTenantId) ? query(collection(firestore, 'scales'), where('tenantId', '==', finalTenantId)) : null, 
+  [firestore, finalTenantId]);
   const { data: scales } = useCollection<Scale>(scalesQuery);
   
   const isLoading = employeesLoading || (userRole === 'master' && tenantsLoading);
@@ -85,7 +96,7 @@ export default function EmployeesPage() {
     return employees.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   }, [employees, currentPage, itemsPerPage]);
 
-  // 4. SUBMIT HANDLER CORRIGIDO (O CORAÇÃO DA SOLUÇÃO)
+  // 4. SUBMIT HANDLER (Injeção de TenantId e Timestamps)
   const handleSubmitEmployee = async (formData: any) => {
     if (!firestore || !finalTenantId) return;
 
@@ -101,33 +112,32 @@ export default function EmployeesPage() {
     }
 
     try {
-      // Blindagem: Pegamos TUDO que veio do formulário (...formData) 
-      // e apenas adicionamos/sobrescrevemos o essencial do sistema.
       const employeeData = { 
           ...formData, 
           tenantId: finalTenantId,
-          updatedAt: new Date().toISOString()
+          updatedAt: serverTimestamp() // Recomendado usar serverTimestamp para auditoria
       };
 
       if (isEditing && editingEmployee?.id) {
-          const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', editingEmployee.id);
+          const docRef = doc(firestore, 'employees', editingEmployee.id);
           await updateDoc(docRef, employeeData);
       } else {
           const docId = formData.cpf.replace(/\D/g, "");
-          const docRef = doc(firestore, 'tenants', finalTenantId, 'employees', docId);
+          const docRef = doc(firestore, 'employees', docId);
           
           if (employees.some(e => e.cpf === formData.cpf)) {
             toast({ variant: "destructive", title: "CPF já cadastrado" });
             return;
           }
-          await setDoc(docRef, employeeData);
+          await setDoc(docRef, { ...employeeData, createdAt: serverTimestamp() });
       }
       
       toast({ title: "Sucesso!", description: "Colaborador salvo com sucesso." });
       setIsDialogOpen(false);
       setEditingEmployee(null);
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Erro ao salvar", description: err.message });
+      toast({ variant: "destructive", title: "Erro ao salvar", description: "Verifique suas permissões de acesso." });
+      console.error(err);
     }
   };
 
@@ -183,7 +193,7 @@ export default function EmployeesPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {paginatedEmployees.map((emp) => (
-              <Card key={emp?.id || Math.random()} className={`group hover:shadow-md transition-all ${emp?.status === 'Inativo' ? 'opacity-60 grayscale' : ''}`}>
+              <Card key={emp?.id} className={`group hover:shadow-md transition-all ${emp?.status === 'Inativo' ? 'opacity-60 grayscale' : ''}`}>
                 <CardContent className="p-6 relative">
                   <div className="absolute top-3 right-3">
                     <DropdownMenu>

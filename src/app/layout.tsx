@@ -6,8 +6,8 @@ import { AuthProvider } from "@/contexts/auth-context";
 import { WhatsappWidget } from '@/components/WhatsappWidget';
 
 export const metadata: Metadata = {
-  title: 'ClockWise',
-  description: 'Modern time tracking for your business.',
+  title: 'ClockWise - Gestão de Ponto Inteligente',
+  description: 'Sistema moderno de controle de ponto e gestão estratégica de RH.',
 };
 
 export default function RootLayout({
@@ -17,13 +17,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-br" suppressHydrationWarning>
-      {/* Remova o <head> manual se as fontes estiverem pesando ou dando erro de Hydration */}
       <body className="antialiased font-sans"> 
+        {/* 
+          1. FirebaseClientProvider: Inicializa a conexão com o Firebase.
+          2. AuthProvider: Agora carrega o vínculo entre o Usuário e o Tenant (empresa).
+        */}
         <FirebaseClientProvider>
           <AuthProvider> 
             {children}
           </AuthProvider>
         </FirebaseClientProvider>
+
+        {/* Componentes globais de interface */}
         <WhatsappWidget />
         <Toaster />
       </body>
