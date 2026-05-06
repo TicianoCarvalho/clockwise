@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Edit, PlusCircle, Trash2, Loader2, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,19 +31,28 @@ import {
 } from "@/components/ui/alert-dialog";
 import { ScheduleForm } from "@/components/ScheduleForm";
 import { useToast } from "@/hooks/use-toast";
-import type { DaySchedule, Schedule } from "@/lib/data";
+import type { Schedule } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
-import { collection, doc, addDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, doc, addDoc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
 
 export default function SchedulesPage() {
     const { toast } = useToast();
     const { firestore } = useFirebase();
-    const { userRole } = useAuthContext();
+    const { userData } = useAuthContext(); // Alterado: Usando userData para pegar tenantId
+    const tenantId = userData?.tenantId;
 
-    const schedulesQuery = useMemoFirebase(() => (firestore && userRole) ? collection(firestore, 'schedules') : null, [firestore, userRole]);
+    // 1. Alterado: Query com filtro de tenantId para listar apenas os horários da empresa
+    const schedulesQuery = useMemoFirebase(() => {
+        if (!firestore || !tenantId) return null;
+        return query(
+            collection(firestore, 'schedules'), 
+            where('tenantId', '==', tenantId)
+        );
+    }, [firestore, tenantId]);
+    
     const { data: schedules, isLoading: loading } = useCollection<Schedule>(schedulesQuery);
     
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -62,24 +71,31 @@ export default function SchedulesPage() {
     };
 
     const handleSubmitSchedule = async (data: Omit<Schedule, 'id'>) => {
-        if (!firestore) {
+        if (!firestore || !tenantId) {
             toast({
                 variant: 'destructive',
                 title: 'Erro de Conexão',
-                description: 'Não foi possível conectar ao banco de dados.',
+                description: 'Não foi possível identificar sua empresa ou conectar ao banco.',
             });
             return;
         }
         const isEditing = !!editingSchedule;
 
         try {
+            // 2. Alterado: Injetando o tenantId nos dados ao salvar
+            const payload = {
+                ...data,
+                tenantId: tenantId
+            };
+
             if (isEditing && editingSchedule?.id) {
                 const docRef = doc(firestore, 'schedules', editingSchedule.id);
-                await updateDoc(docRef, data);
+                await updateDoc(docRef, payload);
             } else {
                 const collectionRef = collection(firestore, 'schedules');
-                await addDoc(collectionRef, data);
+                await addDoc(collectionRef, payload);
             }
+            
             toast({ title: `Horário ${isEditing ? 'atualizado' : 'adicionado'}!`, description: `O horário "${data.name}" foi salvo com sucesso.` });
             setIsDialogOpen(false);
             setEditingSchedule(null);
@@ -106,6 +122,7 @@ export default function SchedulesPage() {
         setDeletingSchedule(null);
     };
 
+    // Lógica de cálculo de minutos (permanece idêntica)
     const calculateTotalWeeklyMinutes = (schedule: Schedule): number => {
         const timeToMinutes = (time: string): number => {
             if (!time || !time.includes(':')) return 0;
@@ -117,12 +134,8 @@ export default function SchedulesPage() {
         const calculateDuration = (start: string, end: string): number => {
             const startMinutes = timeToMinutes(start);
             const endMinutes = timeToMinutes(end);
-
             if (startMinutes === 0 || endMinutes === 0) return 0;
-
-            if (endMinutes < startMinutes) { // Handles overnight shifts
-                return (24 * 60 - startMinutes) + endMinutes;
-            }
+            if (endMinutes < startMinutes) return (24 * 60 - startMinutes) + endMinutes;
             return endMinutes - startMinutes;
         };
 
@@ -136,23 +149,17 @@ export default function SchedulesPage() {
 
     const formatMinutesToHours = (totalMinutes: number): string => {
          if (totalMinutes <= 0) return '0h';
-
         const hours = Math.floor(totalMinutes / 60);
         const minutes = totalMinutes % 60;
-        
-        if (minutes === 0) {
-            return `${hours}h`;
-        }
-
-        return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
+        return minutes === 0 ? `${hours}h` : `${hours}h ${minutes.toString().padStart(2, '0')}m`;
     }
 
   return (
     <>
-      <Card>
+      <Card className="border-none shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2"><CalendarClock /> Gerenciamento de Horários</CardTitle>
+            <CardTitle className="flex items-center gap-2"><CalendarClock className="text-primary" /> Gerenciamento de Horários</CardTitle>
             <CardDescription>Crie e gerencie os quadros de horários e escalas.</CardDescription>
           </div>
           <Button onClick={handleOpenDialogForAdd}>
@@ -163,7 +170,7 @@ export default function SchedulesPage() {
         <CardContent>
            {loading ? (
                  <div className="flex items-center justify-center h-40">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
             ) : (
                 <Table>
@@ -179,7 +186,7 @@ export default function SchedulesPage() {
                      {!schedules || schedules.length === 0 ? (
                          <TableRow>
                             <TableCell colSpan={4} className="h-24 text-center">
-                                Nenhum horário cadastrado.
+                                Nenhum horário cadastrado para sua empresa.
                             </TableCell>
                         </TableRow>
                     ) : (
@@ -195,54 +202,50 @@ export default function SchedulesPage() {
                                         {weeklyHoursFormatted}
                                     </TableCell>
                                     <TableCell>
-                                        {schedule.automaticInterval ? (
-                                            <Badge>Sim</Badge>
-                                        ) : (
-                                            <Badge variant="outline">Não</Badge>
-                                        )}
+                                        <Badge variant={schedule.automaticInterval ? "default" : "outline"}>
+                                            {schedule.automaticInterval ? "Sim" : "Não"}
+                                        </Badge>
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="ghost" size="icon" onClick={() => handleOpenDialogForEdit(schedule)}>
                                             <Edit className="h-4 w-4" />
-                                            <span className="sr-only">Editar</span>
                                         </Button>
                                         <Button variant="ghost" size="icon" className="hover:text-destructive" onClick={() => handleOpenConfirmDeleteDialog(schedule)}>
                                             <Trash2 className="h-4 w-4" />
-                                            <span className="sr-only">Remover</span>
                                         </Button>
                                     </TableCell>
                                 </TableRow>
                             )
                         })
-                     )}
+                    )}
                     </TableBody>
                 </Table>
             )}
         </CardContent>
       </Card>
+      
       <Dialog open={isDialogOpen} onOpenChange={(isOpen) => {
           setIsDialogOpen(isOpen);
-          if (!isOpen) {
-              setEditingSchedule(null);
-          }
+          if (!isOpen) setEditingSchedule(null);
       }}>
         <ScheduleForm 
             schedule={editingSchedule}
             onSubmit={handleSubmitSchedule}
         />
       </Dialog>
+
       <AlertDialog open={isConfirmDeleteDialogOpen} onOpenChange={setIsConfirmDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Você tem certeza?</AlertDialogTitle>
+            <AlertDialogTitle>Confirmar exclusão?</AlertDialogTitle>
             <AlertDialogDescription>
-              Essa ação não pode ser desfeita. Isso removerá permanentemente o horário
-              &quot;{deletingSchedule?.name}&quot; dos seus registros.
+              Isso removerá permanentemente o horário &quot;{deletingSchedule?.name}&quot;. 
+              Funcionários vinculados a este horário poderão ter problemas no cálculo.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteScheduleConfirm}>Continuar</AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteScheduleConfirm}>Excluir</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

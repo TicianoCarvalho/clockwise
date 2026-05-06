@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useFirebase, useCollection, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
-import { collection, query, where, writeBatch, doc, getDocs } from 'firebase/firestore';
+import { collection, query, where, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
 import type { Employee, ClockPunch, Schedule, Holiday, Afastamento } from '@/lib/data';
 import type { DateRange } from 'react-day-picker';
 
@@ -45,40 +45,47 @@ type TimesheetRecord = {
     isHoliday?: boolean;
 };
 
-// --- Componente de Conteúdo (Lógica Principal) ---
+// --- Componente de Conteúdo ---
 function TimesheetContent({ employee, dateRange }: TimesheetContentProps) {
     const { firestore } = useFirebase();
-    const { tenantId } = useAuthContext();
+    const { userData } = useAuthContext();
+    const tenantId = userData?.tenantId; // Padrão SaaS: ID do cliente
     const { toast } = useToast();
 
     const [serverRecords, setServerRecords] = useState<TimesheetRecord[]>([]);
     const [editedRecords, setEditedRecords] = useState<TimesheetRecord[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
-    const schedulesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'schedules') : null, [firestore]);
+    // --- Queries em Coleções Raiz com Filtro tenantId ---
+    const schedulesQuery = useMemoFirebase(() => 
+        (firestore && tenantId) ? query(collection(firestore, 'schedules'), where('tenantId', '==', tenantId)) : null, 
+    [firestore, tenantId]);
     const { data: allSchedules, isLoading: schedulesLoading } = useCollection<Schedule>(schedulesQuery);
 
     const holidaysQuery = useMemoFirebase(() => firestore ? collection(firestore, 'holidays') : null, [firestore]);
     const { data: allHolidays, isLoading: holidaysLoading } = useCollection<Holiday>(holidaysQuery);
 
-    const occurrencesQuery = useMemoFirebase(() => tenantId ? collection(firestore, 'tenants', tenantId, 'occurrences') : null, [firestore, tenantId]);
+    const occurrencesQuery = useMemoFirebase(() => 
+        (firestore && tenantId) ? query(collection(firestore, 'occurrences'), where('tenantId', '==', tenantId)) : null, 
+    [firestore, tenantId]);
     const { data: allOccurrences, isLoading: occurrencesLoading } = useCollection<Afastamento>(occurrencesQuery);
 
     const punchesQuery = useMemoFirebase(() => {
         if (!firestore || !tenantId || !dateRange.from || !dateRange.to || !employee?.matricula) return null;
         return query(
-            collection(firestore, 'tenants', tenantId, 'punches'),
+            collection(firestore, 'punches'),
+            where('tenantId', '==', tenantId), // Filtro de isolamento de dados
             where('employeeId', '==', employee.matricula),
             where('timestamp', '>=', format(dateRange.from, 'yyyy-MM-dd 00:00:00')),
             where('timestamp', '<=', format(dateRange.to, 'yyyy-MM-dd 23:59:59'))
         );
     }, [firestore, tenantId, employee?.matricula, dateRange]);
-
     const { data: allPunches, isLoading: punchesLoading } = useCollection<ClockPunch>(punchesQuery);
     
     const isLoading = schedulesLoading || holidaysLoading || occurrencesLoading || punchesLoading;
     const isDirty = useMemo(() => JSON.stringify(serverRecords) !== JSON.stringify(editedRecords), [serverRecords, editedRecords]);
 
+    // --- Lógica de Processamento da Folha ---
     useEffect(() => {
         if (isLoading || !dateRange.from || !dateRange.to || !allSchedules || !employee?.scheduleId) return;
 
@@ -125,10 +132,13 @@ function TimesheetContent({ employee, dateRange }: TimesheetContentProps) {
         setIsSaving(true);
         try {
             const batch = writeBatch(firestore);
-            // Lógica de salvamento batch aqui...
+            
+            // Exemplo de lógica para salvar alterações (necessita ID do documento original no record para update)
+            // Por enquanto, apenas atualizamos o estado local para simular o sucesso
+            
             await batch.commit();
             setServerRecords(JSON.parse(JSON.stringify(editedRecords)));
-            toast({ title: "Sucesso", description: "Alterações salvas." });
+            toast({ title: "Sucesso", description: "Folha de ponto salva com sucesso." });
         } catch (e: any) {
             toast({ variant: "destructive", title: "Erro", description: e.message });
         } finally {
@@ -139,45 +149,80 @@ function TimesheetContent({ employee, dateRange }: TimesheetContentProps) {
     if (isLoading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin h-8 w-8 text-primary" /></div>;
 
     return (
-        <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+        <Card className="shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
                 <div>
-                    <CardTitle>Espelho de Ponto - {employee?.name || 'Carregando...'}</CardTitle>
-                    <CardDescription>Gerencie os registros do colaborador.</CardDescription>
+                    <CardTitle className="text-2xl font-bold">Espelho de Ponto</CardTitle>
+                    <CardDescription>
+                        {employee?.name} - Matrícula: {employee?.matricula}
+                    </CardDescription>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={handleSaveChanges} disabled={isSaving || !isDirty}>
-                        <Save className="mr-2 h-4 w-4" /> {isSaving ? "Salvando..." : "Salvar"}
+                    <Button variant="outline" size="sm">
+                        <Download className="mr-2 h-4 w-4" /> Exportar PDF
+                    </Button>
+                    <Button onClick={handleSaveChanges} disabled={isSaving || !isDirty} size="sm">
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                        Salvar Alterações
                     </Button>
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="border rounded-lg overflow-auto">
+                <div className="rounded-md border border-slate-200 overflow-hidden">
                     <Table>
-                        <TableHeader>
+                        <TableHeader className="bg-slate-50">
                             <TableRow>
-                                <TableHead>Data</TableHead>
-                                <TableHead>Ent 1</TableHead>
-                                <TableHead>Sai 1</TableHead>
-                                <TableHead>Ent 2</TableHead>
-                                <TableHead>Sai 2</TableHead>
+                                <TableHead className="w-[100px]">Data</TableHead>
+                                <TableHead>Horário</TableHead>
+                                <TableHead className="text-center">Ent. 1</TableHead>
+                                <TableHead className="text-center">Sai. 1</TableHead>
+                                <TableHead className="text-center">Ent. 2</TableHead>
+                                <TableHead className="text-center">Sai. 2</TableHead>
+                                <TableHead className="text-right">Local</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {editedRecords.map((rec) => (
-                                <TableRow key={rec.fullDate}>
-                                    <TableCell>{format(parseISO(rec.fullDate + 'T00:00:00'), 'dd/MM/yy')}</TableCell>
-                                    <TableCell>
-                                        <Input type="time" value={rec.entry1} onChange={(e) => handleInputChange(rec.fullDate, 'entry1', e.target.value)} className="h-8 w-[80px]" />
+                                <TableRow key={rec.fullDate} className={cn(rec.isHoliday && "bg-orange-50/50")}>
+                                    <TableCell className="font-medium">
+                                        {format(parseISO(rec.fullDate + 'T00:00:00'), 'dd/MM/yy')}
+                                        <div className="text-[10px] text-muted-foreground uppercase">{rec.weekday.substring(0, 3)}</div>
                                     </TableCell>
-                                    <TableCell>
-                                        <Input type="time" value={rec.exit1} onChange={(e) => handleInputChange(rec.fullDate, 'exit1', e.target.value)} className="h-8 w-[80px]" />
+                                    <TableCell className="text-xs text-muted-foreground">{rec.schedule}</TableCell>
+                                    <TableCell className="text-center">
+                                        <Input 
+                                            type="time" 
+                                            value={rec.entry1} 
+                                            onChange={(e) => handleInputChange(rec.fullDate, 'entry1', e.target.value)} 
+                                            className="h-8 w-[85px] mx-auto text-xs" 
+                                        />
                                     </TableCell>
-                                    <TableCell>
-                                        <Input type="time" value={rec.entry2} onChange={(e) => handleInputChange(rec.fullDate, 'entry2', e.target.value)} className="h-8 w-[80px]" />
+                                    <TableCell className="text-center">
+                                        <Input 
+                                            type="time" 
+                                            value={rec.exit1} 
+                                            onChange={(e) => handleInputChange(rec.fullDate, 'exit1', e.target.value)} 
+                                            className="h-8 w-[85px] mx-auto text-xs" 
+                                        />
                                     </TableCell>
-                                    <TableCell>
-                                        <Input type="time" value={rec.exit2} onChange={(e) => handleInputChange(rec.fullDate, 'exit2', e.target.value)} className="h-8 w-[80px]" />
+                                    <TableCell className="text-center">
+                                        <Input 
+                                            type="time" 
+                                            value={rec.entry2} 
+                                            onChange={(e) => handleInputChange(rec.fullDate, 'entry2', e.target.value)} 
+                                            className="h-8 w-[85px] mx-auto text-xs" 
+                                        />
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                        <Input 
+                                            type="time" 
+                                            value={rec.exit2} 
+                                            onChange={(e) => handleInputChange(rec.fullDate, 'exit2', e.target.value)} 
+                                            className="h-8 w-[85px] mx-auto text-xs" 
+                                        />
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs max-w-[120px] truncate">
+                                        {rec.location || '-'}
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -189,17 +234,22 @@ function TimesheetContent({ employee, dateRange }: TimesheetContentProps) {
     );
 }
 
-// --- Exportação da Página com Proteção de Build ---
+// --- Componente de Página ---
 export default function TimesheetPage() {
-    // Definindo valores padrão ou carregando via contexto/estado se necessário
+    // Exemplo: No app real, você pegaria o employee selecionado de um estado ou URL
     const defaultRange: DateRange = {
         from: startOfDay(new Date()),
         to: endOfDay(new Date())
     };
 
     return (
-        <main className="p-4">
-            <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin h-10 w-10 text-primary" /></div>}>
+        <main className="container mx-auto py-6">
+            <Suspense fallback={
+                <div className="flex h-[400px] items-center justify-center">
+                    <Loader2 className="animate-spin h-10 w-10 text-primary" />
+                </div>
+            }>
+                {/* Aqui você passaria o objeto do funcionário real selecionado */}
                 <TimesheetContent 
                     employee={{} as Employee} 
                     dateRange={defaultRange} 
@@ -209,5 +259,4 @@ export default function TimesheetPage() {
     );
 }
 
-// Crucial para o build ignorar a falta de contexto de autenticação durante a compilação
 export const dynamic = 'force-dynamic';

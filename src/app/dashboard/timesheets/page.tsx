@@ -26,18 +26,29 @@ import type { Employee, Company } from "@/lib/data";
 import { useToast } from "@/hooks/use-toast";
 import { useFirebase, useCollection, useDoc, useMemoFirebase } from "@/firebase";
 import { useAuthContext } from "@/contexts/auth-context";
-import { collection, doc } from "firebase/firestore";
+import { collection, doc, query, where } from "firebase/firestore";
 
 export default function TimesheetsPage() {
     const { firestore } = useFirebase();
-    const { tenantId } = useAuthContext();
+    const { userData } = useAuthContext();
+    const tenantId = userData?.tenantId;
     const { toast } = useToast();
 
-    // Fetch employees and company info from Firestore
-    const employeesQuery = useMemoFirebase(() => tenantId ? collection(firestore, 'tenants', tenantId, 'employees') : null, [firestore, tenantId]);
+    // 1. Alterado: Busca funcionários na coleção raiz com filtro de tenantId
+    const employeesQuery = useMemoFirebase(() => {
+        if (!firestore || !tenantId) return null;
+        return query(
+            collection(firestore, 'employees'), 
+            where('tenantId', '==', tenantId)
+        );
+    }, [firestore, tenantId]);
+    
     const { data: employees, isLoading: employeesLoading } = useCollection<Employee>(employeesQuery);
     
-    const companyQuery = useMemoFirebase(() => tenantId ? doc(firestore, 'tenants', tenantId) : null, [firestore, tenantId]);
+    // 2. Alterado: Busca info da empresa na coleção raiz 'companies' (ou 'tenants')
+    const companyQuery = useMemoFirebase(() => 
+        (firestore && tenantId) ? doc(firestore, 'companies', tenantId) : null, 
+    [firestore, tenantId]);
     const { data: companyInfo, isLoading: companyLoading } = useDoc<Company>(companyQuery);
 
     const loading = employeesLoading || companyLoading;
@@ -50,7 +61,6 @@ export default function TimesheetsPage() {
         dateRange: undefined,
     });
     
-    // Effect to set initial state once data is loaded
     useEffect(() => {
         if (!loading && employees && employees.length > 0) {
             const initialDateRange = {
@@ -81,38 +91,45 @@ export default function TimesheetsPage() {
     
     return (
         <div className="flex flex-col gap-4">
-            <Card>
+            <Card className="border-none shadow-sm">
                 <CardHeader>
-                    <CardTitle>Folha de Ponto Eletrônica</CardTitle>
-                    <CardDescription>Selecione o colaborador e o período para visualizar e gerenciar a folha de ponto.</CardDescription>
+                    <CardTitle className="text-xl">Folha de Ponto Eletrônica</CardTitle>
+                    <CardDescription>Selecione o colaborador e o período para gerenciar os registros.</CardDescription>
                 </CardHeader>
-                <CardContent className="flex flex-col sm:flex-row gap-4">
+                <CardContent className="flex flex-col md:flex-row gap-4 items-end">
                     {loading ? (
                         <div className="flex items-center justify-center w-full h-10">
-                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            <Loader2 className="h-6 w-6 animate-spin text-primary" />
                         </div>
                     ) : (
                         <>
-                            <div className="flex-1 space-y-2">
-                                <label htmlFor="employee-select" className="text-sm font-medium">Colaborador</label>
+                            <div className="flex-1 space-y-2 w-full">
+                                <label htmlFor="employee-select" className="text-sm font-semibold text-slate-700">Colaborador</label>
                                 <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
-                                    <SelectTrigger id="employee-select">
+                                    <SelectTrigger id="employee-select" className="bg-white">
                                         <SelectValue placeholder="Selecione um colaborador" />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {(employees || []).map(employee => (
-                                            <SelectItem key={employee.matricula} value={employee.matricula}>{employee.name}</SelectItem>
+                                            <SelectItem key={employee.matricula} value={employee.matricula}>
+                                                {employee.name} ({employee.matricula})
+                                            </SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="flex-1 space-y-2">
-                                <label htmlFor="month-select" className="text-sm font-medium">Período</label>
+                            <div className="flex-1 space-y-2 w-full">
+                                <label className="text-sm font-semibold text-slate-700">Período de Apuração</label>
                                 <DatePickerWithRange date={selectedDateRange} setDate={setSelectedDateRange} />
                             </div>
-                            <div className="flex items-end">
-                                <Button onClick={handleSearch} disabled={!selectedEmployeeId || !selectedDateRange}><Search className="mr-2 h-4 w-4"/>Buscar</Button>
-                            </div>
+                            <Button 
+                                onClick={handleSearch} 
+                                disabled={!selectedEmployeeId || !selectedDateRange}
+                                className="w-full md:w-auto"
+                            >
+                                <Search className="mr-2 h-4 w-4"/>
+                                Visualizar Ponto
+                            </Button>
                         </>
                     )}
                 </CardContent>
