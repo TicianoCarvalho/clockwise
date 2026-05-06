@@ -23,55 +23,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   useEffect(() => {
-    // Escuta a mudança de estado de autenticação (Login/Logout)
+    if (typeof window === 'undefined' || !auth) {
+      setIsAuthLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setIsAuthLoading(true);
-      
+
       try {
         if (firebaseUser) {
           setUser(firebaseUser);
 
-          // 1. Busca o perfil global para saber a qual empresa (tenant) ele pertence
+          // 🔐 1. Buscar usuário global (para pegar tenantId)
           const userDocRef = doc(firestore, "users", firebaseUser.uid);
           const userDoc = await getDoc(userDocRef);
-          
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            const tId = userData.tenantId;
-            setTenantId(tId || null);
 
-            // 2. Busca o nível de acesso real dentro da subcoleção de funcionários
-            if (tId) {
-              const empDocRef = doc(firestore, "tenants", tId, "employees", firebaseUser.uid);
-              const empDoc = await getDoc(empDocRef);
-
-              if (empDoc.exists()) {
-                const empData = empDoc.data();
-                setEmployeeData(empData);
-                // Define o papel do usuário no sistema com base no nível de acesso da empresa
-                setUserRole(empData.accessLevel || 'user');
-              } else {
-                // Caso o usuário tenha tenantId mas não tenha registro de funcionário (erro de consistência)
-                setUserRole(userData.role || 'user');
-                setEmployeeData(null);
-              }
-            } else if (userData.role === 'master') {
-              // Caso especial para administradores do próprio SaaS (ClockWise Master)
-              setUserRole('master');
-              setEmployeeData(null);
-            }
+          if (!userDoc.exists()) {
+            throw new Error("Usuário sem registro no Firestore");
           }
+
+          const userData = userDoc.data();
+          const tId = userData.tenantId;
+
+          if (!tId) {
+            throw new Error("Usuário sem tenantId definido");
+          }
+
+          setTenantId(tId);
+
+          // 🔥 2. Buscar employee DENTRO DO TENANT (CORRETO)
+          const empDocRef = doc(
+            firestore,
+            "tenants",
+            tId,
+            "employees",
+            firebaseUser.uid
+          );
+
+          const empDoc = await getDoc(empDocRef);
+
+          if (empDoc.exists()) {
+            const empData = empDoc.data();
+            setEmployeeData(empData);
+            setUserRole(empData.accessLevel || 'user');
+          } else {
+            // fallback para admin
+            setUserRole(userData.role || 'admin');
+          }
+
         } else {
-          // Reset completo ao deslogar
+          // logout
           setUser(null);
           setUserRole(null);
           setTenantId(null);
           setEmployeeData(null);
         }
+
       } catch (error) {
-        console.error("Erro ao carregar contexto de autenticação:", error);
-        // Em caso de erro, garantimos que o sistema não trave em "carregando"
+        console.error("Erro no auth-context:", error);
+
+        // 🔴 IMPORTANTE: resetar estado para evitar app quebrado
+        setUser(null);
+        setTenantId(null);
         setUserRole(null);
+        setEmployeeData(null);
+
       } finally {
         setIsAuthLoading(false);
       }
@@ -81,13 +98,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider 
-      value={{ 
-        user, 
-        userRole, 
-        tenantId, 
-        isAuthLoading, 
-        employeeData 
+    <AuthContext.Provider
+      value={{
+        user,
+        userRole,
+        tenantId,
+        isAuthLoading,
+        employeeData
       }}
     >
       {children}
@@ -97,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuthContext() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useAuthContext deve ser usado dentro de um AuthProvider');
   }
   return context;

@@ -2,8 +2,10 @@ import * as admin from 'firebase-admin';
 
 const formatPrivateKey = (key: string | undefined) => {
   if (!key) return undefined;
-  // Trata a chave de forma robusta para Windows e Linux
-  return key.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1').trim();
+  return key
+    .replace(/\\n/g, '\n')
+    .replace(/^"(.*)"$/, '$1')
+    .trim();
 };
 
 const serviceAccount = {
@@ -12,32 +14,26 @@ const serviceAccount = {
   privateKey: formatPrivateKey(process.env.FIREBASE_ADMIN_PRIVATE_KEY),
 };
 
-// Se não houver app inicializado, inicializa
-if (!admin.apps.length) {
-  if (serviceAccount.projectId && serviceAccount.privateKey && serviceAccount.clientEmail) {
-    try {
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-      });
-      console.log('[Firebase Admin] Inicializado com sucesso.');
-    } catch (error) {
-      console.error('[Firebase Admin] Erro de inicialização:', error);
-    }
-  } else {
-    // Log crucial para você saber PORQUE não conectou
-    console.warn('[Firebase Admin] Aviso: Variáveis de ambiente faltando ou inválidas.');
+// 🔐 Inicialização segura (singleton)
+function initializeFirebaseAdmin() {
+  if (admin.apps.length > 0) {
+    return admin.app();
   }
+
+  if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey) {
+    throw new Error('[Firebase Admin] Variáveis de ambiente não configuradas corretamente.');
+  }
+
+  return admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+  });
 }
 
-// Exporta as instâncias reais ou tenta recuperá-las
-export const adminDb = admin.apps.length > 0 
-  ? admin.firestore() 
-  : admin.apps.length === 0 && process.env.NODE_ENV === 'development'
-    ? admin.firestore() // Tenta forçar em dev
-    : {} as admin.firestore.Firestore;
+// 🚀 Inicializa de forma garantida
+const app = initializeFirebaseAdmin();
 
-export const adminAuth = admin.apps.length > 0 
-  ? admin.auth() 
-  : {} as admin.auth.Auth;
+// ✅ EXPORTS SEGUROS
+export const adminDb = admin.firestore(app);
+export const adminAuth = admin.auth(app);
 
 export default admin;

@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Função auxiliar para verificar se o usuário pertence ao inquilino (tenant)
+    // Função para validar se o usuário pertence ao tenant do documento
     function isUserInTenant(tenantId) {
       return request.auth != null && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tenantId == tenantId;
@@ -10,27 +10,41 @@ service cloud.firestore {
 
     // Regras para a coleção de usuários
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null; // Permite leitura para o app buscar o tenantId
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Regras para a coleção de inquilinos e subcoleções de batidas (punches)
+    // --- NOVAS REGRAS PARA COLEÇÕES RAIZ (SaaS) ---
+
+    // Regras para Horários (Schedules)
+    match /schedules/{scheduleId} {
+      // O usuário só lê/lista se o tenantId do documento bater com o dele
+      allow read, list: if isUserInTenant(resource.data.tenantId);
+      // O usuário só cria se o tenantId que ele está enviando for o dele
+      allow create: if isUserInTenant(request.resource.data.tenantId);
+      // Update/Delete seguem a mesma lógica
+      allow update, delete: if isUserInTenant(resource.data.tenantId);
+    }
+
+    // Regras para Funcionários (Employees)
+    match /employees/{employeeId} {
+      allow read, list: if isUserInTenant(resource.data.tenantId);
+      allow create: if isUserInTenant(request.resource.data.tenantId);
+      allow update, delete: if isUserInTenant(resource.data.tenantId);
+    }
+
+    // --- REGRAS EXISTENTES (Estrutura Hierárquica) ---
+
     match /tenants/{tenantId} {
-      // Permite leitura dos dados do inquilino se o usuário for parte dele
       allow get: if isUserInTenant(tenantId);
       
-      // Regras específicas para as batidas de ponto (ClockWise)
       match /punches/{punchId} {
-        // Resolve o erro "Missing or insufficient permissions" permitindo listagem e leitura
-        // apenas se o tenantId do usuário for igual ao da rota
-        allow read, list: if isUserInTenant(tenantId);
-        
-        // Permite criar batidas se o usuário estiver autenticado e pertencer ao tenant
-        allow create: if isUserInTenant(tenantId);
+        allow read, list, create: if isUserInTenant(tenantId);
       }
     }
     
-    // Regra para o Tech Hub / Gestão (opcional, dependendo da sua estrutura)
     match /gestao_operacional/{docId} {
+      // Recomendado: Adicionar isUserInTenant aqui também no futuro
       allow read, write: if request.auth != null;
     }
   }

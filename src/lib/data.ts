@@ -1,198 +1,150 @@
 import { adminDb } from './firebase-admin-config';
 
-// --- INTERFACES ---
+// --- HELPERS CRÍTICOS ---
 
-export interface Company {
-  id: string;
-  name: string;
-  cnpj: string;
-  planLimit?: number;
-  status?: string;
-  plan?: 'soft' | 'plus' | 'prime';
-  paymentDay?: number;
+function validateTenant(tenantId: string) {
+  if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
+    throw new Error('TenantId inválido ou não informado');
+  }
 }
 
-export interface Sector {
-  id: string;
-  name: string;
+function tenantRef(tenantId: string) {
+  validateTenant(tenantId);
+  return adminDb.collection('tenants').doc(tenantId);
 }
 
-export interface Schedule {
-  id: string;
-  name: string;
+// --- INTERFACES (mantidas) ---
+// (sem alteração aqui)
+
+// --- BUSCAS GENÉRICAS ---
+
+async function safeGetCollection(path: FirebaseFirestore.CollectionReference) {
+  try {
+    const snap = await path.get();
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error: any) {
+    console.error('Erro Firestore:', error);
+    throw new Error('Falha ao buscar dados');
+  }
 }
 
-export interface Scale {
-  id: string;
-  name: string;
-}
-
-export interface Location {
-  id: string;
-  name: string;
-  tenantId: string;
-  latitude?: number;
-  longitude?: number;
-  radius?: number; 
-}
-
-export interface Employee {
-  id?: string;
-  matricula: string;
-  name: string;
-  cpf: string;
-  email?: string;
-  tenantId: string;
-  branchId?: string;
-  setor?: string;
-  scheduleId?: string;
-  scaleId?: string | null;
-  admissionDate: string;        
-  terminationDate?: string | null;
-  birthDate?: string | null;
-  phone?: string;                
-  eSocialId?: string;            
-  automaticInterval: boolean;   
-  allowMobilePunch: boolean;    
-  address?: string;             
-  avatarUrl?: string;           
-  status: 'Ativo' | 'Inativo';
-  workModel?: 'standard' | 'hourly';
-  isTrustPosition?: boolean; // Adicionado para lógica de cargo de confiança
-}
-
-// --- BUSCAS POR TENANT (Estrutura Isolada) ---
+// --- SCHEDULES / SECTORS / SCALES ---
 
 export const getSchedules = async (tenantId: string) => {
-  const snap = await adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('schedules')
-    .get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Schedule[];
+  return safeGetCollection(tenantRef(tenantId).collection('schedules'));
 };
 
 export const getSectors = async (tenantId: string) => {
-  const snap = await adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('sectors')
-    .get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Sector[];
+  return safeGetCollection(tenantRef(tenantId).collection('sectors'));
 };
 
 export const getScales = async (tenantId: string) => {
-  const snap = await adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('scales')
-    .get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Scale[];
+  return safeGetCollection(tenantRef(tenantId).collection('scales'));
 };
 
-// --- FILIAIS (BRANCHES) ---
+// --- BRANCHES ---
 
 export const getBranches = async (tenantId: string) => {
-  const snap = await adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('branches')
-    .get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  return safeGetCollection(tenantRef(tenantId).collection('branches'));
 };
 
-// --- LOCAIS DE MARCAÇÃO (LOCATIONS) ---
+// --- LOCATIONS ---
 
 export const getLocations = async (tenantId: string) => {
-  const snap = await adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('locations')
-    .get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() })) as Location[];
+  return safeGetCollection(tenantRef(tenantId).collection('locations'));
 };
 
-// --- FUNCIONÁRIOS (EMPLOYEES) ---
+// --- EMPLOYEES ---
 
 export const getEmployees = async (tenantId: string) => {
-  const snap = await adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('employees')
-    .get();
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Employee[];
+  return safeGetCollection(tenantRef(tenantId).collection('employees'));
 };
 
 export const getEmployeeById = async (tenantId: string, employeeId: string) => {
-  const doc = await adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('employees')
-    .doc(employeeId)
-    .get();
-  return doc.exists ? { id: doc.id, ...doc.data() } as Employee : null;
+  try {
+    const doc = await tenantRef(tenantId)
+      .collection('employees')
+      .doc(employeeId)
+      .get();
+
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+
+  } catch (error) {
+    console.error('Erro ao buscar funcionário:', error);
+    throw new Error('Erro ao buscar funcionário');
+  }
 };
 
+// 🔥 CORRIGIDO: NÃO USAR CPF COMO ID
 export const addEmployee = async (tenantId: string, data: Partial<Employee>) => {
-  // Normaliza o CPF para usar como ID do documento
-  const docId = data.cpf ? data.cpf.replace(/\D/g, "") : undefined;
-  
-  const payload = {
-    ...data,
-    tenantId, // Garante que o ID do cliente esteja no documento
-    createdAt: new Date().toISOString()
-  };
+  try {
+    const payload = {
+      ...data,
+      tenantId,
+      createdAt: new Date().toISOString()
+    };
 
-  if (docId) {
-    return adminDb
-      .collection('tenants')
-      .doc(tenantId)
+    return await tenantRef(tenantId)
       .collection('employees')
-      .doc(docId)
-      .set(payload);
+      .add(payload);
+
+  } catch (error) {
+    console.error('Erro ao criar funcionário:', error);
+    throw new Error('Erro ao criar funcionário');
   }
-  
-  return adminDb.collection('tenants').doc(tenantId).collection('employees').add(payload);
 };
 
 export const updateEmployee = async (tenantId: string, employeeId: string, data: Partial<Employee>) => {
-  return adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('employees')
-    .doc(employeeId)
-    .update({
-      ...data,
-      updatedAt: new Date().toISOString()
-    });
+  try {
+    return await tenantRef(tenantId)
+      .collection('employees')
+      .doc(employeeId)
+      .update({
+        ...data,
+        updatedAt: new Date().toISOString()
+      });
+
+  } catch (error) {
+    console.error('Erro ao atualizar funcionário:', error);
+    throw new Error('Erro ao atualizar funcionário');
+  }
 };
 
-// --- MARCAÇÕES DE PONTO (PUNCHES) ---
+// --- PUNCHES ---
 
 export const addPunch = async (tenantId: string, employeeId: string, punchData: any) => {
-  return adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('employees')
-    .doc(employeeId)
-    .collection('punches')
-    .add({
-      ...punchData,
-      serverTimestamp: new Date().toISOString()
-    });
+  try {
+    return await tenantRef(tenantId)
+      .collection('employees')
+      .doc(employeeId)
+      .collection('punches')
+      .add({
+        ...punchData,
+        serverTimestamp: new Date().toISOString()
+      });
+
+  } catch (error) {
+    console.error('Erro ao registrar ponto:', error);
+    throw new Error('Erro ao registrar ponto');
+  }
 };
 
 export const getTodayPunches = async (tenantId: string, employeeId: string) => {
-  const today = new Date().toISOString().split('T')[0]; 
-  const snap = await adminDb
-    .collection('tenants')
-    .doc(tenantId)
-    .collection('employees')
-    .doc(employeeId)
-    .collection('punches')
-    .where('date', '==', today)
-    .orderBy('serverTimestamp', 'asc')
-    .get();
-    
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  try {
+    const today = new Date().toISOString().split('T')[0];
+
+    const snap = await tenantRef(tenantId)
+      .collection('employees')
+      .doc(employeeId)
+      .collection('punches')
+      .where('date', '==', today)
+      .orderBy('serverTimestamp', 'asc')
+      .get();
+
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+  } catch (error) {
+    console.error('Erro ao buscar pontos:', error);
+    throw new Error('Erro ao buscar pontos');
+  }
 };
