@@ -1,150 +1,309 @@
 import { adminDb } from './firebase-admin-config';
 
-// --- HELPERS CRÍTICOS ---
+// ======================================================
+// VALIDADORES
+// ======================================================
 
-function validateTenant(tenantId: string) {
-  if (!tenantId || tenantId === 'undefined' || tenantId === 'null') {
-    throw new Error('TenantId inválido ou não informado');
+function validateFirebase() {
+  if (!adminDb) {
+    throw new Error(
+      'Firebase Admin indisponível'
+    );
   }
 }
 
-function tenantRef(tenantId: string) {
-  validateTenant(tenantId);
-  return adminDb.collection('tenants').doc(tenantId);
+function validateTenant(
+  tenantId: string
+) {
+  if (
+    !tenantId ||
+    tenantId === 'undefined' ||
+    tenantId === 'null'
+  ) {
+    throw new Error(
+      'TenantId inválido'
+    );
+  }
 }
 
-// --- INTERFACES (mantidas) ---
-// (sem alteração aqui)
+// ======================================================
+// HELPERS
+// ======================================================
 
-// --- BUSCAS GENÉRICAS ---
+function tenantRef(
+  tenantId: string
+) {
+  validateFirebase();
 
-async function safeGetCollection(path: FirebaseFirestore.CollectionReference) {
+  validateTenant(tenantId);
+
+  return adminDb!
+    .collection('tenants')
+    .doc(tenantId);
+}
+
+// ======================================================
+// GENERIC SAFE GET
+// ======================================================
+
+async function safeGetCollection(
+  path: FirebaseFirestore.CollectionReference
+) {
   try {
     const snap = await path.get();
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error: any) {
-    console.error('Erro Firestore:', error);
-    throw new Error('Falha ao buscar dados');
+
+    return snap.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error(
+      '[Firestore Collection Error]',
+      error
+    );
+
+    throw new Error(
+      'Erro ao buscar coleção'
+    );
   }
 }
 
-// --- SCHEDULES / SECTORS / SCALES ---
+// ======================================================
+// SCHEDULES
+// ======================================================
 
-export const getSchedules = async (tenantId: string) => {
-  return safeGetCollection(tenantRef(tenantId).collection('schedules'));
+export const getSchedules = async (
+  tenantId: string
+) => {
+  return safeGetCollection(
+    tenantRef(tenantId).collection(
+      'schedules'
+    )
+  );
 };
 
-export const getSectors = async (tenantId: string) => {
-  return safeGetCollection(tenantRef(tenantId).collection('sectors'));
+// ======================================================
+// SECTORS
+// ======================================================
+
+export const getSectors = async (
+  tenantId: string
+) => {
+  return safeGetCollection(
+    tenantRef(tenantId).collection(
+      'sectors'
+    )
+  );
 };
 
-export const getScales = async (tenantId: string) => {
-  return safeGetCollection(tenantRef(tenantId).collection('scales'));
+// ======================================================
+// SCALES
+// ======================================================
+
+export const getScales = async (
+  tenantId: string
+) => {
+  return safeGetCollection(
+    tenantRef(tenantId).collection(
+      'scales'
+    )
+  );
 };
 
-// --- BRANCHES ---
+// ======================================================
+// BRANCHES
+// ======================================================
 
-export const getBranches = async (tenantId: string) => {
-  return safeGetCollection(tenantRef(tenantId).collection('branches'));
+export const getBranches = async (
+  tenantId: string
+) => {
+  return safeGetCollection(
+    tenantRef(tenantId).collection(
+      'branches'
+    )
+  );
 };
 
-// --- LOCATIONS ---
+// ======================================================
+// LOCATIONS
+// ======================================================
 
-export const getLocations = async (tenantId: string) => {
-  return safeGetCollection(tenantRef(tenantId).collection('locations'));
+export const getLocations = async (
+  tenantId: string
+) => {
+  return safeGetCollection(
+    tenantRef(tenantId).collection(
+      'locations'
+    )
+  );
 };
 
-// --- EMPLOYEES ---
+// ======================================================
+// EMPLOYEES
+// ======================================================
 
-export const getEmployees = async (tenantId: string) => {
-  return safeGetCollection(tenantRef(tenantId).collection('employees'));
+export const getEmployees = async (
+  tenantId: string
+) => {
+  return safeGetCollection(
+    tenantRef(tenantId).collection(
+      'employees'
+    )
+  );
 };
 
-export const getEmployeeById = async (tenantId: string, employeeId: string) => {
+export const getEmployeeById = async (
+  tenantId: string,
+  employeeId: string
+) => {
   try {
-    const doc = await tenantRef(tenantId)
+    const snap = await tenantRef(
+      tenantId
+    )
       .collection('employees')
       .doc(employeeId)
       .get();
 
-    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+    if (!snap.exists) {
+      return null;
+    }
 
+    return {
+      id: snap.id,
+      ...snap.data(),
+    };
   } catch (error) {
-    console.error('Erro ao buscar funcionário:', error);
-    throw new Error('Erro ao buscar funcionário');
+    console.error(
+      '[Employee Error]',
+      error
+    );
+
+    throw new Error(
+      'Erro ao buscar funcionário'
+    );
   }
 };
 
-// 🔥 CORRIGIDO: NÃO USAR CPF COMO ID
-export const addEmployee = async (tenantId: string, data: Partial<Employee>) => {
+export const addEmployee = async (
+  tenantId: string,
+  data: any
+) => {
   try {
-    const payload = {
-      ...data,
-      tenantId,
-      createdAt: new Date().toISOString()
-    };
-
     return await tenantRef(tenantId)
       .collection('employees')
-      .add(payload);
-
+      .add({
+        ...data,
+        tenantId,
+        createdAt:
+          new Date().toISOString(),
+      });
   } catch (error) {
-    console.error('Erro ao criar funcionário:', error);
-    throw new Error('Erro ao criar funcionário');
+    console.error(
+      '[Add Employee Error]',
+      error
+    );
+
+    throw new Error(
+      'Erro ao criar funcionário'
+    );
   }
 };
 
-export const updateEmployee = async (tenantId: string, employeeId: string, data: Partial<Employee>) => {
+export const updateEmployee = async (
+  tenantId: string,
+  employeeId: string,
+  data: any
+) => {
   try {
     return await tenantRef(tenantId)
       .collection('employees')
       .doc(employeeId)
       .update({
         ...data,
-        updatedAt: new Date().toISOString()
+        updatedAt:
+          new Date().toISOString(),
       });
-
   } catch (error) {
-    console.error('Erro ao atualizar funcionário:', error);
-    throw new Error('Erro ao atualizar funcionário');
+    console.error(
+      '[Update Employee Error]',
+      error
+    );
+
+    throw new Error(
+      'Erro ao atualizar funcionário'
+    );
   }
 };
 
-// --- PUNCHES ---
+// ======================================================
+// PUNCHES
+// ======================================================
 
-export const addPunch = async (tenantId: string, employeeId: string, punchData: any) => {
+// 🔥 PADRÃO SaaS ESCALÁVEL
+// tenants/{tenantId}/punches
+
+export const addPunch = async (
+  tenantId: string,
+  punchData: any
+) => {
   try {
     return await tenantRef(tenantId)
-      .collection('employees')
-      .doc(employeeId)
       .collection('punches')
       .add({
         ...punchData,
-        serverTimestamp: new Date().toISOString()
+        createdAt:
+          new Date().toISOString(),
       });
-
   } catch (error) {
-    console.error('Erro ao registrar ponto:', error);
-    throw new Error('Erro ao registrar ponto');
+    console.error(
+      '[Punch Error]',
+      error
+    );
+
+    throw new Error(
+      'Erro ao registrar ponto'
+    );
   }
 };
 
-export const getTodayPunches = async (tenantId: string, employeeId: string) => {
-  try {
-    const today = new Date().toISOString().split('T')[0];
+export const getTodayPunches =
+  async (
+    tenantId: string,
+    employeeId: string
+  ) => {
+    try {
+      const today = new Date()
+        .toISOString()
+        .split('T')[0];
 
-    const snap = await tenantRef(tenantId)
-      .collection('employees')
-      .doc(employeeId)
-      .collection('punches')
-      .where('date', '==', today)
-      .orderBy('serverTimestamp', 'asc')
-      .get();
+      const snap = await tenantRef(
+        tenantId
+      )
+        .collection('punches')
+        .where(
+          'employeeId',
+          '==',
+          employeeId
+        )
+        .where('date', '==', today)
+        .orderBy(
+          'createdAt',
+          'asc'
+        )
+        .get();
 
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      return snap.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+    } catch (error) {
+      console.error(
+        '[Get Punches Error]',
+        error
+      );
 
-  } catch (error) {
-    console.error('Erro ao buscar pontos:', error);
-    throw new Error('Erro ao buscar pontos');
-  }
-};
+      throw new Error(
+        'Erro ao buscar pontos'
+      );
+    }
+  };

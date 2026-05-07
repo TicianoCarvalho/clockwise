@@ -1,29 +1,100 @@
 import * as admin from 'firebase-admin';
 
-const formatPrivateKey = (key: string | undefined) => {
+const formatPrivateKey = (
+  key: string | undefined
+) => {
   if (!key) return undefined;
-  return key.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim();
+
+  return key
+    .replace(/^["']|["']$/g, '')
+    .replace(/\\n/g, '\n')
+    .trim();
 };
 
 const serviceAccount = {
-  projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
-  clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
-  privateKey: formatPrivateKey(process.env.FIREBASE_ADMIN_PRIVATE_KEY),
+  projectId:
+    process.env.FIREBASE_ADMIN_PROJECT_ID,
+
+  clientEmail:
+    process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+
+  privateKey: formatPrivateKey(
+    process.env.FIREBASE_ADMIN_PRIVATE_KEY
+  ),
 };
 
-const isBuildStep = process.env.NEXT_PHASE === 'phase-production-build';
+// Detecta build do Next
+const isBuildStep =
+  process.env.NEXT_PHASE ===
+  'phase-production-build';
 
-if (!admin.apps.length && !isBuildStep && serviceAccount.projectId && serviceAccount.privateKey) {
+// =====================================
+// INIT FIREBASE ADMIN
+// =====================================
+
+function initializeFirebaseAdmin() {
+  // evita init durante build
+  if (isBuildStep) {
+    console.warn(
+      '[Firebase Admin] Build step detectado'
+    );
+
+    return null;
+  }
+
+  // reutiliza app existente
+  if (admin.apps.length > 0) {
+    return admin.app();
+  }
+
+  // valida envs
+  if (
+    !serviceAccount.projectId ||
+    !serviceAccount.clientEmail ||
+    !serviceAccount.privateKey
+  ) {
+    console.error(
+      '[Firebase Admin] Variáveis ausentes'
+    );
+
+    return null;
+  }
+
   try {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+    return admin.initializeApp({
+      credential: admin.credential.cert(
+        serviceAccount as admin.ServiceAccount
+      ),
     });
   } catch (error) {
-    console.error('[Firebase Admin] Erro de inicialização:', error);
+    console.error(
+      '[Firebase Admin] Erro init:',
+      error
+    );
+
+    return null;
   }
 }
 
-// Exporta proxies para evitar erro de "initializeApp" no build
-export const adminDb = isBuildStep ? {} as any : admin.firestore();
-export const adminAuth = isBuildStep ? {} as any : admin.auth();
+// =====================================
+// START
+// =====================================
+
+const firebaseAdminApp =
+  initializeFirebaseAdmin();
+
+// =====================================
+// EXPORTS
+// =====================================
+
+export const adminDb =
+  firebaseAdminApp
+    ? admin.firestore()
+    : null;
+
+export const adminAuth =
+  firebaseAdminApp
+    ? admin.auth()
+    : null;
+
 export default admin;
