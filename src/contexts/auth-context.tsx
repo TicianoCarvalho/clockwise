@@ -18,10 +18,7 @@ import {
   getDoc,
 } from 'firebase/firestore';
 
-import {
-  auth,
-  firestore,
-} from '@/firebase';
+import { auth, firestore } from '@/firebase';
 
 interface UserData {
   uid?: string;
@@ -41,248 +38,148 @@ export interface AuthContextType {
 }
 
 export const AuthContext =
-  createContext<AuthContextType | undefined>(
-    undefined
-  );
+  createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export function AuthProvider({ children }: { children: ReactNode }) {
 
-  const [user, setUser] =
-    useState<User | null>(null);
-
-  const [userData, setUserData] =
-    useState<UserData | null>(null);
-
-  const [userRole, setUserRole] =
-    useState<string | null>(null);
-
-  const [tenantId, setTenantId] =
-    useState<string | null>(null);
-
-  const [employeeData, setEmployeeData] =
-    useState<any | null>(null);
-
-  const [isAuthLoading, setIsAuthLoading] =
-    useState(true);
+  const [state, setState] = useState({
+    user: null as User | null,
+    userData: null as UserData | null,
+    userRole: null as string | null,
+    tenantId: null as string | null,
+    employeeData: null as any,
+    isAuthLoading: true,
+  });
 
   useEffect(() => {
 
-    // SSR SAFE
     if (typeof window === 'undefined') {
-      setIsAuthLoading(false);
+      setState((prev) => ({ ...prev, isAuthLoading: false }));
       return;
     }
 
-    // FIREBASE SAFE
     if (!auth || !firestore) {
+      console.error('[AUTH] Firebase não inicializado');
 
-      console.error(
-        '[AUTH] Firebase não inicializado'
-      );
-
-      setIsAuthLoading(false);
+      setState((prev) => ({
+        ...prev,
+        isAuthLoading: false,
+      }));
 
       return;
     }
 
-    const unsubscribe =
-      onAuthStateChanged(
-        auth,
-        async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
 
-          setIsAuthLoading(true);
+      try {
+        setState((prev) => ({ ...prev, isAuthLoading: true }));
 
-          try {
-
-            // =====================================
-            // LOGOUT
-            // =====================================
-
-            if (!firebaseUser) {
-
-              setUser(null);
-
-              setUserData(null);
-
-              setUserRole(null);
-
-              setTenantId(null);
-
-              setEmployeeData(null);
-
-              setIsAuthLoading(false);
-
-              return;
-            }
-
-            // =====================================
-            // LOGIN
-            // =====================================
-
-            setUser(firebaseUser);
-
-            // =====================================
-            // GLOBAL USER
-            // =====================================
-
-            const userRef = doc(
-              firestore,
-              'users',
-              firebaseUser.uid
-            );
-
-            const userSnap =
-              await getDoc(userRef);
-
-            if (!userSnap.exists()) {
-
-              throw new Error(
-                'Usuário não encontrado no Firestore'
-              );
-            }
-
-            const globalUserData =
-              userSnap.data() as UserData;
-
-            setUserData(globalUserData);
-
-            const currentTenantId =
-              globalUserData?.tenantId || null;
-
-            setTenantId(currentTenantId);
-
-            // =====================================
-            // MASTER
-            // =====================================
-
-            if (
-              globalUserData?.role === 'master'
-            ) {
-
-              setUserRole('master');
-
-              setEmployeeData(null);
-
-              setIsAuthLoading(false);
-
-              return;
-            }
-
-            // =====================================
-            // VALIDATE TENANT
-            // =====================================
-
-            if (!currentTenantId) {
-
-              throw new Error(
-                'Usuário sem tenantId'
-              );
-            }
-
-            // =====================================
-            // EMPLOYEE ROOT COLLECTION
-            // =====================================
-
-            const employeeRef = doc(
-              firestore,
-              'employees',
-              firebaseUser.uid
-            );
-
-            const employeeSnap =
-              await getDoc(employeeRef);
-
-            // =====================================
-            // EMPLOYEE FOUND
-            // =====================================
-
-            if (employeeSnap.exists()) {
-
-              const empData =
-                employeeSnap.data();
-
-              setEmployeeData(empData);
-
-              setUserRole(
-                empData?.accessLevel ||
-                globalUserData?.role ||
-                'funcionario'
-              );
-
-            } else {
-
-              // =====================================
-              // FALLBACK ADMIN
-              // =====================================
-
-              setEmployeeData(null);
-
-              setUserRole(
-                globalUserData?.role ||
-                'admin'
-              );
-            }
-
-          } catch (error) {
-
-            console.error(
-              '[AUTH CONTEXT ERROR]',
-              error
-            );
-
-            // RESET SAFE
-            setUser(null);
-
-            setUserData(null);
-
-            setTenantId(null);
-
-            setUserRole(null);
-
-            setEmployeeData(null);
-
-          } finally {
-
-            setIsAuthLoading(false);
-          }
+        // =====================================
+        // LOGOUT
+        // =====================================
+        if (!firebaseUser) {
+          setState({
+            user: null,
+            userData: null,
+            userRole: null,
+            tenantId: null,
+            employeeData: null,
+            isAuthLoading: false,
+          });
+          return;
         }
-      );
+
+        // =====================================
+        // GLOBAL USER
+        // =====================================
+        const userRef = doc(firestore, 'users', firebaseUser.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (!userSnap.exists()) {
+          throw new Error('Usuário não encontrado no Firestore');
+        }
+
+        const globalUserData = userSnap.data() as UserData;
+        const tenantId = globalUserData?.tenantId ?? null;
+
+        // MASTER EARLY RETURN
+        if (globalUserData?.role === 'master') {
+          setState({
+            user: firebaseUser,
+            userData: globalUserData,
+            userRole: 'master',
+            tenantId,
+            employeeData: null,
+            isAuthLoading: false,
+          });
+          return;
+        }
+
+        if (!tenantId) {
+          throw new Error('Usuário sem tenantId');
+        }
+
+        // =====================================
+        // EMPLOYEE
+        // =====================================
+        const employeeRef = doc(firestore, 'employees', firebaseUser.uid);
+        const employeeSnap = await getDoc(employeeRef);
+
+        let userRole: string;
+
+        let employeeData = null;
+
+        if (employeeSnap.exists()) {
+          employeeData = employeeSnap.data();
+
+          userRole =
+            employeeData?.accessLevel ||
+            globalUserData?.role ||
+            'funcionario';
+
+        } else {
+          userRole = globalUserData?.role || 'admin';
+        }
+
+        setState({
+          user: firebaseUser,
+          userData: globalUserData,
+          userRole,
+          tenantId,
+          employeeData,
+          isAuthLoading: false,
+        });
+
+      } catch (error) {
+        console.error('[AUTH CONTEXT ERROR]', error);
+
+        setState({
+          user: null,
+          userData: null,
+          userRole: null,
+          tenantId: null,
+          employeeData: null,
+          isAuthLoading: false,
+        });
+      }
+    });
 
     return () => unsubscribe();
 
   }, []);
 
   return (
-
-    <AuthContext.Provider
-      value={{
-        user,
-        userData,
-        userRole,
-        tenantId,
-        employeeData,
-        isAuthLoading,
-      }}
-    >
+    <AuthContext.Provider value={state}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuthContext() {
-
-  const context =
-    useContext(AuthContext);
+  const context = useContext(AuthContext);
 
   if (!context) {
-
-    throw new Error(
-      'useAuthContext deve ser usado dentro do AuthProvider'
-    );
+    throw new Error('useAuthContext deve ser usado dentro do AuthProvider');
   }
 
   return context;

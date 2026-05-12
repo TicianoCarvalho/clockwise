@@ -1,7 +1,8 @@
-'use server';
-import { config } from 'dotenv';
-config();
+// TEMPORARIAMENTE DESABILITADO
+// Este arquivo estava causando timeout no deploy
+// devido ao carregamento automático dos flows do Genkit.
 
-import '@/ai/flows/generate-anomaly-report.ts';
-import '@/ai/flows/geocode-address.ts';
-import '@/ai/flows/verify-face.ts';
+// NÃO remover o arquivo.
+// Apenas manter sem imports globais por enquanto.
+
+export {};
