@@ -19,7 +19,8 @@ const WhatsAppIcon = () => (
   </svg>
 );
 
-export function WhatsappWidget() {
+// Alterado para export default para casar com o import do layout
+export default function WhatsappWidget() {
   const [settings, setSettings] = useState<SupportSettings | null>(null);
 
   useEffect(() => {
@@ -51,7 +52,6 @@ export function WhatsappWidget() {
   );
 
   const number = settings.whatsappNumber.replace(/\D/g, "");
-
   const link = `https://wa.me/${number}?text=${text}`;
 
   return (
