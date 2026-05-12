@@ -1,20 +1,39 @@
 "use client";
 
-import { initializeApp, getApps, getApp } from "firebase/app";
+import {
+  initializeApp,
+  getApps,
+  getApp
+} from "firebase/app";
 
 import {
   getAuth
 } from "firebase/auth";
 
 import {
-  getFirestore
+  getFirestore,
+  collection,
+  doc,
+  query,
+  onSnapshot,
+  Query,
+  DocumentReference
 } from "firebase/firestore";
 
 import {
   getStorage
 } from "firebase/storage";
 
-// ✅ CONFIG VIA .ENV
+import {
+  useEffect,
+  useMemo,
+  useState
+} from "react";
+
+// ======================================================
+// CONFIG
+// ======================================================
+
 const firebaseConfig = {
 
   apiKey:
@@ -36,39 +55,211 @@ const firebaseConfig = {
     process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// ✅ VALIDAÇÃO
+// ======================================================
+// SAFE INIT
+// ======================================================
+
 const hasFirebaseConfig =
-  firebaseConfig.apiKey &&
-  firebaseConfig.authDomain &&
-  firebaseConfig.projectId &&
-  firebaseConfig.appId;
 
-// ✅ APP
-const app =
-  getApps().length > 0
-    ? getApp()
-    : hasFirebaseConfig
-      ? initializeApp(firebaseConfig)
-      : null;
+  !!firebaseConfig.apiKey &&
+  !!firebaseConfig.authDomain &&
+  !!firebaseConfig.projectId &&
+  !!firebaseConfig.appId;
 
-// ✅ AUTH
+// NÃO lançar throw no build
+const app = hasFirebaseConfig
+
+  ? (
+      getApps().length > 0
+        ? getApp()
+        : initializeApp(firebaseConfig)
+    )
+
+  : null;
+
+// ======================================================
+// SERVICES
+// ======================================================
+
 export const auth =
   app ? getAuth(app) : null;
 
-// ✅ FIRESTORE
 export const firestore =
   app ? getFirestore(app) : null;
 
-// ✅ STORAGE
 export const storage =
   app ? getStorage(app) : null;
 
-// ✅ EXPORT DEFAULT
+// ======================================================
+// DEFAULT
+// ======================================================
+
 export default app;
 
-// ✅ DEBUG
+// ======================================================
+// DEBUG
+// ======================================================
+
 if (!hasFirebaseConfig) {
+
   console.error(
-    "[FIREBASE] Variáveis NEXT_PUBLIC_* não carregadas."
+    "[FIREBASE] Variáveis NEXT_PUBLIC_FIREBASE_* ausentes."
   );
+
+} else {
+
+  console.log(
+    "[FIREBASE] Inicializado:",
+    firebaseConfig.projectId
+  );
+}
+
+// ======================================================
+// HOOKS
+// ======================================================
+
+export function useFirebase() {
+
+  return {
+    app,
+    auth,
+    firestore,
+    storage,
+  };
+}
+
+// ======================================================
+// useMemoFirebase
+// ======================================================
+
+export function useMemoFirebase<T>(
+  factory: () => T,
+  deps: React.DependencyList
+) {
+
+  return useMemo(factory, deps);
+}
+
+// ======================================================
+// useCollection
+// ======================================================
+
+export function useCollection<T>(
+  q: Query | null
+) {
+
+  const [data, setData] =
+    useState<T[]>([]);
+
+  const [isLoading, setIsLoading] =
+    useState(true);
+
+  useEffect(() => {
+
+    if (!q) {
+
+      setData([]);
+      setIsLoading(false);
+
+      return;
+    }
+
+    const unsubscribe =
+      onSnapshot(
+        q,
+        (snapshot) => {
+
+          const docs =
+            snapshot.docs.map(
+              (doc) => ({
+                id: doc.id,
+                ...doc.data(),
+              })
+            ) as T[];
+
+          setData(docs);
+
+          setIsLoading(false);
+        },
+        (error) => {
+
+          console.error(error);
+
+          setData([]);
+
+          setIsLoading(false);
+        }
+      );
+
+    return () => unsubscribe();
+
+  }, [q]);
+
+  return {
+    data,
+    isLoading,
+  };
+}
+
+// ======================================================
+// useDocument
+// ======================================================
+
+export function useDocument<T>(
+  ref: DocumentReference | null
+) {
+
+  const [data, setData] =
+    useState<T | null>(null);
+
+  const [isLoading, setIsLoading] =
+    useState(true);
+
+  useEffect(() => {
+
+    if (!ref) {
+
+      setData(null);
+      setIsLoading(false);
+
+      return;
+    }
+
+    const unsubscribe =
+      onSnapshot(
+        ref,
+        (snapshot) => {
+
+          if (!snapshot.exists()) {
+
+            setData(null);
+
+          } else {
+
+            setData({
+              id: snapshot.id,
+              ...snapshot.data(),
+            } as T);
+          }
+
+          setIsLoading(false);
+        },
+        (error) => {
+
+          console.error(error);
+
+          setData(null);
+
+          setIsLoading(false);
+        }
+      );
+
+    return () => unsubscribe();
+
+  }, [ref]);
+
+  return {
+    data,
+    isLoading,
+  };
 }

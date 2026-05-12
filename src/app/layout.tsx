@@ -1,13 +1,24 @@
 import type { Metadata } from 'next';
 import './globals.css';
+
 import { Toaster } from "@/components/ui/toaster";
-import { FirebaseClientProvider } from '@/firebase/client-provider';
+
+import { FirebaseProvider } from '@/firebase/provider';
+
+import {
+  app,
+  auth,
+  firestore
+} from '@/firebase';
+
 import { AuthProvider } from "@/contexts/auth-context";
+
 import { WhatsappWidget } from '@/components/WhatsappWidget';
 
 export const metadata: Metadata = {
   title: 'ClockWise - Gestão de Ponto Inteligente',
-  description: 'Sistema moderno de controle de ponto e gestão estratégica de RH.',
+  description:
+    'Sistema moderno de controle de ponto e gestão estratégica de RH.',
 };
 
 export default function RootLayout({
@@ -15,22 +26,42 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+
   return (
-    <html lang="pt-br" suppressHydrationWarning>
-      <body className="antialiased font-sans"> 
+    <html
+      lang="pt-br"
+      suppressHydrationWarning
+    >
+      <body className="antialiased font-sans">
+
         {/* 
-          1. FirebaseClientProvider: Inicializa a conexão com o Firebase.
-          2. AuthProvider: Agora carrega o vínculo entre o Usuário e o Tenant (empresa).
+          FirebaseProvider:
+          Inicializa Firebase App + Auth + Firestore
         */}
-        <FirebaseClientProvider>
-          <AuthProvider> 
+
+        <FirebaseProvider
+          firebaseApp={app}
+          auth={auth}
+          firestore={firestore}
+        >
+
+          {/* 
+            AuthProvider:
+            Gerencia sessão do usuário e tenant
+          */}
+
+          <AuthProvider>
             {children}
           </AuthProvider>
-        </FirebaseClientProvider>
 
-        {/* Componentes globais de interface */}
+        </FirebaseProvider>
+
+        {/* COMPONENTES GLOBAIS */}
+
         <WhatsappWidget />
+
         <Toaster />
+
       </body>
     </html>
   );

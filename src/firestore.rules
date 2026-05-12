@@ -1,6 +1,7 @@
 rules_version = '2';
 
 service cloud.firestore {
+
   match /databases/{database}/documents {
 
     // =====================================================
@@ -12,28 +13,47 @@ service cloud.firestore {
     }
 
     function getUserData() {
-      return get(
+
+      return exists(
         /databases/$(database)/documents/users/$(request.auth.uid)
-      ).data;
+      )
+
+      ? get(
+          /databases/$(database)/documents/users/$(request.auth.uid)
+        ).data
+
+      : null;
     }
 
     function isMaster() {
+
+      let userData = getUserData();
+
       return isAuthenticated() &&
-        getUserData().role == 'master';
+        userData != null &&
+        userData.role == 'master';
     }
 
     function isUserInTenant(tenantId) {
+
+      let userData = getUserData();
+
       return isAuthenticated() &&
-        getUserData().tenantId == tenantId;
+        userData != null &&
+        userData.tenantId == tenantId;
     }
 
     function isAdminTenant(tenantId) {
+
+      let userData = getUserData();
+
       return isAuthenticated() &&
+        userData != null &&
         (
-          getUserData().role == 'admin' ||
-          getUserData().role == 'master'
+          userData.role == 'admin' ||
+          userData.role == 'master'
         ) &&
-        getUserData().tenantId == tenantId;
+        userData.tenantId == tenantId;
     }
 
     // =====================================================
@@ -42,25 +62,25 @@ service cloud.firestore {
 
     match /users/{userId} {
 
-      // Usuário pode ler o próprio perfil
+      // LEITURA
       allow read: if isAuthenticated() &&
         (
           request.auth.uid == userId ||
           isMaster()
         );
 
-      // Usuário pode criar o próprio doc
+      // CREATE INICIAL
       allow create: if isAuthenticated() &&
         request.auth.uid == userId;
 
-      // Usuário pode atualizar o próprio doc
+      // UPDATE
       allow update: if isAuthenticated() &&
         (
           request.auth.uid == userId ||
           isMaster()
         );
 
-      // Apenas master pode deletar
+      // DELETE
       allow delete: if isMaster();
     }
 
@@ -70,23 +90,28 @@ service cloud.firestore {
 
     match /tenants/{tenantId} {
 
-      // Tenant visível apenas para empresa dona
-      allow read: if isUserInTenant(tenantId) || isMaster();
+      // READ
+      allow read: if
+        isUserInTenant(tenantId) ||
+        isMaster();
 
-      // Apenas master cria tenant diretamente
-      // (cadastro SaaS via API Admin SDK ignora rules)
-      allow create: if isMaster();
+      // CREATE INICIAL DO ONBOARDING SAAS
+      allow create: if isAuthenticated();
 
-      allow update: if isAdminTenant(tenantId) || isMaster();
+      // UPDATE
+      allow update: if
+        isAdminTenant(tenantId) ||
+        isMaster();
 
+      // DELETE
       allow delete: if isMaster();
 
-      // =====================================================
-      // SUBCOLEÇÕES TENANT
-      // =====================================================
-
+      // SUBCOLEÇÕES
       match /{document=**} {
-        allow read, write: if isUserInTenant(tenantId) || isMaster();
+
+        allow read, write: if
+          isUserInTenant(tenantId) ||
+          isMaster();
       }
     }
 
@@ -101,8 +126,7 @@ service cloud.firestore {
         isMaster();
 
       allow create: if
-        isUserInTenant(request.resource.data.tenantId) ||
-        isMaster();
+        isAuthenticated();
 
       allow update, delete: if
         isUserInTenant(resource.data.tenantId) ||
@@ -236,7 +260,7 @@ service cloud.firestore {
     }
 
     // =====================================================
-    // DISPOSITIVOS
+    // DEVICES
     // =====================================================
 
     match /devices/{deviceId} {
@@ -259,6 +283,7 @@ service cloud.firestore {
     // =====================================================
 
     match /{document=**} {
+
       allow read, write: if false;
     }
   }

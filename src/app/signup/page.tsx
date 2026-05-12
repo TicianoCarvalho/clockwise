@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -45,13 +45,13 @@ import {
 import { useFirebase } from '@/firebase';
 
 import {
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  deleteUser
 } from 'firebase/auth';
 
 import {
   doc,
   setDoc,
-  writeBatch
 } from 'firebase/firestore';
 
 import {
@@ -122,6 +122,9 @@ export default function SignupPage() {
 
   const [error, setError] = useState<string | null>(null);
 
+  // TRAVA ABSOLUTA CONTRA DUPLO SUBMIT
+  const submitLock = useRef(false);
+
   const form = useForm<SignupFormValues>({
     resolver: zodResolver(signupFormSchema),
 
@@ -148,27 +151,33 @@ export default function SignupPage() {
       return;
     }
 
+    let createdUser = null;
+
     try {
+
+      console.log("MASTER 1 - CREATE AUTH");
 
       const userCredential =
         await createUserWithEmailAndPassword(
           auth,
-          data.email,
+          data.email.trim().toLowerCase(),
           data.password
         );
 
-      const newUser = userCredential.user;
+      createdUser = userCredential.user;
+
+      console.log("MASTER 2 - AUTH OK");
 
       const userDocRef =
-        doc(firestore, "users", newUser.uid);
+        doc(firestore, "users", createdUser.uid);
 
       await setDoc(userDocRef, {
 
-        uid: newUser.uid,
+        uid: createdUser.uid,
 
         name: data.name,
 
-        email: data.email,
+        email: data.email.trim().toLowerCase(),
 
         role: "master",
 
@@ -176,6 +185,8 @@ export default function SignupPage() {
 
         createdAt: new Date().toISOString(),
       });
+
+      console.log("MASTER 3 - FIRESTORE OK");
 
       toast({
         title: "Conta master criada.",
@@ -186,7 +197,25 @@ export default function SignupPage() {
 
     } catch (err: any) {
 
-      console.error(err);
+      console.error("MASTER ERROR:", err);
+
+      // ROLLBACK
+      if (createdUser) {
+
+        try {
+
+          await deleteUser(createdUser);
+
+          console.log("MASTER ROLLBACK OK");
+
+        } catch (rollbackError) {
+
+          console.error(
+            "MASTER ROLLBACK ERROR:",
+            rollbackError
+          );
+        }
+      }
 
       let friendlyMessage =
         "Erro ao criar conta master.";
@@ -194,6 +223,11 @@ export default function SignupPage() {
       if (err.code === 'auth/email-already-in-use') {
         friendlyMessage =
           "Conta master já existe.";
+      }
+
+      if (err.code === 'permission-denied') {
+        friendlyMessage =
+          "Firestore bloqueou gravação.";
       }
 
       setError(friendlyMessage);
@@ -204,11 +238,22 @@ export default function SignupPage() {
     data: SignupFormValues
   ) {
 
+    // BLOQUEIO ABSOLUTO
+    if (submitLock.current) {
+      return;
+    }
+
+    submitLock.current = true;
+
     setLoading(true);
 
     setError(null);
 
+    let createdUser = null;
+
     try {
+
+      console.log("1 - VALIDANDO FIREBASE");
 
       if (!auth || !firestore) {
         throw new Error("Firebase não inicializado.");
@@ -222,15 +267,22 @@ export default function SignupPage() {
         return;
       }
 
-      // CREATE AUTH
+      console.log("2 - CREATE AUTH");
+
+      // AUTH
       const userCredential =
         await createUserWithEmailAndPassword(
           auth,
-          data.email,
+          data.email.trim().toLowerCase(),
           data.password
         );
 
-      const newUser = userCredential.user;
+      createdUser = userCredential.user;
+
+      console.log(
+        "3 - AUTH OK:",
+        createdUser.uid
+      );
 
       // TENANT ID
       const tenantId =
@@ -240,22 +292,20 @@ export default function SignupPage() {
         throw new Error("CNPJ inválido.");
       }
 
-      // BATCH
-      const batch = writeBatch(firestore);
-
       // REFS
       const tenantDocRef =
         doc(firestore, "tenants", tenantId);
 
       const userDocRef =
-        doc(firestore, "users", newUser.uid);
+        doc(firestore, "users", createdUser.uid);
 
-      // ✅ COLLECTION ROOT
       const employeeDocRef =
-        doc(firestore, "employees", newUser.uid);
+        doc(firestore, "employees", createdUser.uid);
+
+      console.log("4 - CREATE TENANT");
 
       // TENANT
-      batch.set(tenantDocRef, {
+      await setDoc(tenantDocRef, {
 
         id: tenantId,
 
@@ -284,14 +334,16 @@ export default function SignupPage() {
         createdAt: new Date().toISOString(),
       });
 
-      // USER GLOBAL
-      batch.set(userDocRef, {
+      console.log("5 - TENANT OK");
 
-        uid: newUser.uid,
+      // USER
+      await setDoc(userDocRef, {
+
+        uid: createdUser.uid,
 
         name: data.name,
 
-        email: data.email,
+        email: data.email.trim().toLowerCase(),
 
         role: "admin",
 
@@ -302,18 +354,20 @@ export default function SignupPage() {
         createdAt: new Date().toISOString(),
       });
 
-      // ADMIN COMO FUNCIONÁRIO
-      batch.set(employeeDocRef, {
+      console.log("6 - USER OK");
 
-        id: newUser.uid,
+      // EMPLOYEE
+      await setDoc(employeeDocRef, {
 
-        uid: newUser.uid,
+        id: createdUser.uid,
+
+        uid: createdUser.uid,
 
         matricula: "ADM-001",
 
         name: data.name,
 
-        email: data.email,
+        email: data.email.trim().toLowerCase(),
 
         cpf: `ADMIN-${tenantId}`,
 
@@ -341,8 +395,7 @@ export default function SignupPage() {
         createdAt: new Date().toISOString(),
       });
 
-      // COMMIT
-      await batch.commit();
+      console.log("7 - EMPLOYEE OK");
 
       toast({
         title: "Sucesso",
@@ -354,20 +407,59 @@ export default function SignupPage() {
 
     } catch (err: any) {
 
-      console.error(err);
+      console.error("REAL ERROR:", err);
+
+      // ROLLBACK USER AUTH
+      if (createdUser) {
+
+        try {
+
+          console.log(
+            "ROLLBACK AUTH USER"
+          );
+
+          await deleteUser(createdUser);
+
+          console.log(
+            "ROLLBACK SUCCESS"
+          );
+
+        } catch (rollbackError) {
+
+          console.error(
+            "ROLLBACK ERROR:",
+            rollbackError
+          );
+        }
+      }
 
       let friendlyMessage =
         err.message ||
         "Erro ao criar conta.";
 
-      if (err.code === 'auth/email-already-in-use') {
+      if (
+        err.code ===
+        'auth/email-already-in-use'
+      ) {
+
         friendlyMessage =
           "Este e-mail já está em uso.";
+      }
+
+      if (
+        err.code ===
+        'permission-denied'
+      ) {
+
+        friendlyMessage =
+          "Firestore bloqueou a gravação. Verifique as regras.";
       }
 
       setError(friendlyMessage);
 
     } finally {
+
+      submitLock.current = false;
 
       setLoading(false);
     }
@@ -439,6 +531,7 @@ export default function SignupPage() {
                     <FormControl>
                       <Input
                         type="email"
+                        autoComplete="email"
                         {...field}
                       />
                     </FormControl>
@@ -456,6 +549,7 @@ export default function SignupPage() {
                     <FormControl>
                       <Input
                         type="password"
+                        autoComplete="new-password"
                         {...field}
                       />
                     </FormControl>
@@ -535,7 +629,10 @@ export default function SignupPage() {
                     <FormItem>
                       <FormLabel>UF*</FormLabel>
                       <FormControl>
-                        <Input {...field} />
+                        <Input
+                          maxLength={2}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -650,7 +747,10 @@ export default function SignupPage() {
               >
 
                 {loading ? (
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Criando...
+                  </>
                 ) : (
                   'Criar Conta'
                 )}
