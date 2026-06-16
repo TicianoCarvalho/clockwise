@@ -1,94 +1,39 @@
 'use client';
 
-import { firebaseConfig } from '@/firebase/config';
-import {
-  initializeApp,
-  getApps,
-  getApp,
-  FirebaseApp
-} from 'firebase/app';
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
+import { getAuth, Auth } from 'firebase/auth';
+import { getFirestore, Firestore } from 'firebase/firestore';
 
-import { getAuth } from 'firebase/auth';
-
-import { getFirestore } from 'firebase/firestore';
-
-// IMPORTANT: DO NOT MODIFY THIS FUNCTION
-export function initializeFirebase() {
-
-  if (!getApps().length) {
-
-    let firebaseApp;
-
-    try {
-
-      firebaseApp = initializeApp();
-
-    } catch (e) {
-
-      if (process.env.NODE_ENV === 'production') {
-
-        console.warn(
-          'Automatic initialization failed. Falling back to firebase config object.',
-          e
-        );
-      }
-
-      firebaseApp =
-        initializeApp(firebaseConfig);
-    }
-
-    return getSdks(firebaseApp);
-  }
-
-  return getSdks(getApp());
-}
-
-export function getSdks(
-  firebaseApp: FirebaseApp
-) {
-
-  return {
-
-    firebaseApp,
-
-    auth: getAuth(firebaseApp),
-
-    firestore: getFirestore(firebaseApp),
-  };
-}
-
-// ============================================
-// SINGLETON COMPATIBILITY EXPORTS
-// ============================================
-
-const {
-  firebaseApp,
-  auth,
-  firestore
-} = initializeFirebase();
-
-export {
-  firebaseApp,
-  auth,
-  firestore
+// Objeto de configuração extraído diretamente das variáveis NEXT_PUBLIC
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// ============================================
-// MODULE EXPORTS
-// ============================================
+function getFirebaseInstance() {
+  if (typeof window !== 'undefined') { // Garante execução apenas no Browser
+    if (!getApps().length) {
+      return initializeApp(firebaseConfig);
+    }
+    return getApp();
+  }
+  return null;
+}
 
+const app = getFirebaseInstance();
+
+// Exportações seguras
+export const firebaseApp = app as FirebaseApp;
+export const auth = app ? getAuth(app) : null as unknown as Auth;
+export const firestore = app ? getFirestore(app) : null as unknown as Firestore;
+
+// Helpers de exportação
 export * from './provider';
-
 export * from './client-provider';
-
 export * from './firestore/use-collection';
-
 export * from './firestore/use-doc';
-
-export * from './non-blocking-updates';
-
-export * from './non-blocking-login';
-
 export * from './errors';
-
-export * from './error-emitter';

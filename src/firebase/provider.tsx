@@ -1,377 +1,58 @@
-'use client';
+"use client";
 
-import React, {
-  createContext,
-  useContext,
-  ReactNode,
-  useMemo,
-  useState,
-  useEffect,
-  DependencyList,
-} from 'react';
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { doc, getDoc } from "firebase/firestore";
+import { firestore } from "@/firebase"; // Importa o singleton corrigido acima
+import { cn } from "@/lib/utils";
+import { type SupportSettings } from "@/lib/data";
 
-import { FirebaseApp } from 'firebase/app';
+const WhatsAppIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.433-9.89-9.89-9.89-5.458 0-9.887 4.434-9.889 9.89-.001 2.265.655 4.398 1.876 6.204l-1.244 4.549 4.62-1.211z" />
+  </svg>
+);
 
-import { Firestore } from 'firebase/firestore';
-
-import {
-  Auth,
-  User,
-  onAuthStateChanged,
-} from 'firebase/auth';
-
-import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
-
-// =====================================================
-// TYPES
-// =====================================================
-
-interface FirebaseProviderProps {
-  children: ReactNode;
-  firebaseApp: FirebaseApp;
-  firestore: Firestore;
-  auth: Auth;
-}
-
-interface UserAuthState {
-  user: User | null;
-  isUserLoading: boolean;
-  userError: Error | null;
-}
-
-export interface FirebaseContextState {
-  areServicesAvailable: boolean;
-
-  firebaseApp: FirebaseApp | null;
-
-  firestore: Firestore | null;
-
-  auth: Auth | null;
-
-  user: User | null;
-
-  isUserLoading: boolean;
-
-  userError: Error | null;
-}
-
-export interface FirebaseServicesAndUser {
-  firebaseApp: FirebaseApp | null;
-
-  firestore: Firestore | null;
-
-  auth: Auth | null;
-
-  user: User | null;
-
-  isUserLoading: boolean;
-
-  userError: Error | null;
-}
-
-export interface UserHookResult {
-  user: User | null;
-
-  isUserLoading: boolean;
-
-  userError: Error | null;
-}
-
-// =====================================================
-// CONTEXT
-// =====================================================
-
-export const FirebaseContext =
-  createContext<FirebaseContextState | undefined>(
-    undefined
-  );
-
-// =====================================================
-// PROVIDER
-// =====================================================
-
-export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
-  children,
-  firebaseApp,
-  firestore,
-  auth,
-}) => {
-
-  const [userAuthState, setUserAuthState] =
-    useState<UserAuthState>({
-      user: null,
-      isUserLoading: true,
-      userError: null,
-    });
-
-  // =====================================================
-  // AUTH LISTENER
-  // =====================================================
+export default function WhatsappWidget() {
+  const [settings, setSettings] = useState<SupportSettings | null>(null);
 
   useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        // Busca direta no Firestore - Não gera erro 404
+        const ref = doc(firestore, "support_settings", "global");
+        const snap = await getDoc(ref);
 
-    if (!auth) {
-
-      console.error(
-        '[AUTH] Firebase Auth não inicializado'
-      );
-
-      setUserAuthState({
-        user: null,
-        isUserLoading: false,
-        userError: new Error(
-          'Firebase Auth não inicializado.'
-        ),
-      });
-
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(
-
-      auth,
-
-      (firebaseUser) => {
-
-        setUserAuthState({
-          user: firebaseUser,
-          isUserLoading: false,
-          userError: null,
-        });
-      },
-
-      (error) => {
-
-        console.error(
-          '[AUTH] onAuthStateChanged:',
-          error
-        );
-
-        setUserAuthState({
-          user: null,
-          isUserLoading: false,
-          userError: error,
-        });
+        if (snap.exists()) {
+          setSettings(snap.data() as SupportSettings);
+        }
+      } catch (error) {
+        console.error("Erro ao carregar WhatsApp via Firestore:", error);
       }
-    );
-
-    return () => unsubscribe();
-
-  }, [auth]);
-
-  // =====================================================
-  // CONTEXT VALUE
-  // =====================================================
-
-  const contextValue = useMemo<FirebaseContextState>(() => {
-
-    const servicesAvailable =
-      !!firebaseApp &&
-      !!firestore &&
-      !!auth;
-
-    return {
-
-      areServicesAvailable: servicesAvailable,
-
-      firebaseApp: servicesAvailable
-        ? firebaseApp
-        : null,
-
-      firestore: servicesAvailable
-        ? firestore
-        : null,
-
-      auth: servicesAvailable
-        ? auth
-        : null,
-
-      user: userAuthState.user,
-
-      isUserLoading:
-        userAuthState.isUserLoading,
-
-      userError:
-        userAuthState.userError,
     };
 
-  }, [
-    firebaseApp,
-    firestore,
-    auth,
-    userAuthState,
-  ]);
+    loadSettings();
+  }, []);
 
-  // =====================================================
-  // RENDER
-  // =====================================================
-
-  return (
-
-    <FirebaseContext.Provider value={contextValue}>
-
-      <FirebaseErrorListener />
-
-      {children}
-
-    </FirebaseContext.Provider>
-  );
-};
-
-// =====================================================
-// SAFE FALLBACK
-// =====================================================
-
-const firebaseFallback: FirebaseServicesAndUser = {
-
-  firebaseApp: null,
-
-  firestore: null,
-
-  auth: null,
-
-  user: null,
-
-  isUserLoading: true,
-
-  userError: null,
-};
-
-// =====================================================
-// HOOKS
-// =====================================================
-
-export const useFirebase =
-  (): FirebaseServicesAndUser => {
-
-    const context =
-      useContext(FirebaseContext);
-
-    // SSR SAFE
-    if (!context) {
-
-      return firebaseFallback;
-    }
-
-    // SERVICES SAFE
-    if (
-      !context.areServicesAvailable ||
-      !context.firebaseApp ||
-      !context.firestore ||
-      !context.auth
-    ) {
-
-      return {
-        firebaseApp: context.firebaseApp,
-        firestore: context.firestore,
-        auth: context.auth,
-        user: context.user,
-        isUserLoading: true,
-        userError: context.userError,
-      };
-    }
-
-    return {
-
-      firebaseApp: context.firebaseApp,
-
-      firestore: context.firestore,
-
-      auth: context.auth,
-
-      user: context.user,
-
-      isUserLoading:
-        context.isUserLoading,
-
-      userError:
-        context.userError,
-    };
-  };
-
-// =====================================================
-// AUTH
-// =====================================================
-
-export const useAuth = (): Auth | null => {
-
-  const { auth } = useFirebase();
-
-  return auth;
-};
-
-// =====================================================
-// FIRESTORE
-// =====================================================
-
-export const useFirestore =
-  (): Firestore | null => {
-
-    const { firestore } =
-      useFirebase();
-
-    return firestore;
-  };
-
-// =====================================================
-// APP
-// =====================================================
-
-export const useFirebaseApp =
-  (): FirebaseApp | null => {
-
-    const { firebaseApp } =
-      useFirebase();
-
-    return firebaseApp;
-  };
-
-// =====================================================
-// USER
-// =====================================================
-
-export const useUser =
-  (): UserHookResult => {
-
-    const {
-      user,
-      isUserLoading,
-      userError,
-    } = useFirebase();
-
-    return {
-      user,
-      isUserLoading,
-      userError,
-    };
-  };
-
-// =====================================================
-// MEMO HELPER
-// =====================================================
-
-type MemoFirebase<T> = T & {
-  __memo?: boolean;
-};
-
-export function useMemoFirebase<T>(
-  factory: () => T,
-  deps: DependencyList
-): T | MemoFirebase<T> {
-
-  const memoized =
-    useMemo(factory, deps);
-
-  if (
-    typeof memoized !== 'object' ||
-    memoized === null
-  ) {
-    return memoized;
+  if (!settings?.widgetEnabled || !settings?.whatsappNumber) {
+    return null;
   }
 
-  (
-    memoized as MemoFirebase<T>
-  ).__memo = true;
+  const number = settings.whatsappNumber.replace(/\D/g, "");
+  const text = encodeURIComponent("Olá! Preciso de ajuda com o sistema ClockWise.");
+  const link = `https://wa.me/${number}?text=${text}`;
 
-  return memoized;
+  return (
+    <Link
+      href={link}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        "fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white shadow-lg transition-transform hover:scale-110 active:scale-100"
+      )}
+      aria-label="Fale conosco no WhatsApp"
+    >
+      <WhatsAppIcon />
+    </Link>
+  );
 }

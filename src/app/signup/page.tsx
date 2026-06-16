@@ -42,7 +42,8 @@ import {
   AlertTitle
 } from '@/components/ui/alert';
 
-import { useFirebase } from '@/firebase';
+// ✅ CORREÇÃO: Importando as instâncias singleton diretamente do seu arquivo de configuração
+import { auth, firestore } from '@/lib/firebase';
 
 import {
   createUserWithEmailAndPassword,
@@ -63,63 +64,35 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 
 const signupFormSchema = z.object({
-
   // EMPRESA
-  companyName: z.string()
-    .min(2, "O nome da empresa é obrigatório."),
-
-  cnpj: z.string()
-    .min(14, "O CNPJ deve ter 14 dígitos.")
-    .max(18, "Formato de CNPJ inválido."),
-
-  address: z.string()
-    .min(1, "O endereço é obrigatório."),
-
+  companyName: z.string().min(2, "O nome da empresa é obrigatório."),
+  cnpj: z.string().min(14, "O CNPJ deve ter 14 dígitos.").max(18, "Formato de CNPJ inválido."),
+  address: z.string().min(1, "O endereço é obrigatório."),
   ie: z.string().optional(),
-
   cei: z.string().optional(),
-
-  city: z.string()
-    .min(2, "A cidade é obrigatória."),
-
-  state: z.string()
-    .min(2, "UF obrigatória.")
-    .max(2, "Use a sigla do estado."),
-
+  city: z.string().min(2, "A cidade é obrigatória."),
+  state: z.string().min(2, "UF obrigatória.").max(2, "Use a sigla do estado."),
   plan: z.enum(['soft', 'plus', 'prime'], {
     required_error: 'Selecione um plano.'
   }),
-
-  paymentDay: z.enum(
-    ['5', '10', '15', '20', '25', '30'],
-    {
-      required_error: 'Selecione o dia de pagamento.'
-    }
-  ),
+  paymentDay: z.enum(['5', '10', '15', '20', '25', '30'], {
+    required_error: 'Selecione o dia de pagamento.'
+  }),
 
   // ADMIN
-  name: z.string()
-    .min(2, "O nome do administrador é obrigatório."),
-
-  email: z.string()
-    .email("E-mail inválido."),
-
-  password: z.string()
-    .min(6, "Senha mínima de 6 caracteres."),
+  name: z.string().min(2, "O nome do administrador é obrigatório."),
+  email: z.string().email("E-mail inválido."),
+  password: z.string().min(6, "Senha mínima de 6 caracteres."),
 });
 
 type SignupFormValues = z.infer<typeof signupFormSchema>;
 
 export default function SignupPage() {
-
   const router = useRouter();
-
   const { toast } = useToast();
 
-  const { auth, firestore } = useFirebase();
-
+  // ✅ CORREÇÃO: Removido a chamada do hook "useFirebase" que retornava nulo.
   const [loading, setLoading] = useState(false);
-
   const [error, setError] = useState<string | null>(null);
 
   // TRAVA ABSOLUTA CONTRA DUPLO SUBMIT
@@ -127,7 +100,6 @@ export default function SignupPage() {
 
   const form = useForm<SignupFormValues>({
     resolver: zodResolver(signupFormSchema),
-
     defaultValues: {
       name: '',
       email: '',
@@ -142,10 +114,7 @@ export default function SignupPage() {
     },
   });
 
-  async function handleMasterAdminSignup(
-    data: SignupFormValues
-  ) {
-
+  async function handleMasterAdminSignup(data: SignupFormValues) {
     if (!auth || !firestore) {
       setError("Firebase não inicializado.");
       return;
@@ -154,35 +123,25 @@ export default function SignupPage() {
     let createdUser = null;
 
     try {
-
       console.log("MASTER 1 - CREATE AUTH");
 
-      const userCredential =
-        await createUserWithEmailAndPassword(
-          auth,
-          data.email.trim().toLowerCase(),
-          data.password
-        );
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        data.email.trim().toLowerCase(),
+        data.password
+      );
 
       createdUser = userCredential.user;
-
       console.log("MASTER 2 - AUTH OK");
 
-      const userDocRef =
-        doc(firestore, "users", createdUser.uid);
+      const userDocRef = doc(firestore, "users", createdUser.uid);
 
       await setDoc(userDocRef, {
-
         uid: createdUser.uid,
-
         name: data.name,
-
         email: data.email.trim().toLowerCase(),
-
         role: "master",
-
         status: "Ativo",
-
         createdAt: new Date().toISOString(),
       });
 
@@ -194,65 +153,41 @@ export default function SignupPage() {
       });
 
       router.push('/login');
-
     } catch (err: any) {
-
       console.error("MASTER ERROR:", err);
 
       // ROLLBACK
       if (createdUser) {
-
         try {
-
           await deleteUser(createdUser);
-
           console.log("MASTER ROLLBACK OK");
-
         } catch (rollbackError) {
-
-          console.error(
-            "MASTER ROLLBACK ERROR:",
-            rollbackError
-          );
+          console.error("MASTER ROLLBACK ERROR:", rollbackError);
         }
       }
 
-      let friendlyMessage =
-        "Erro ao criar conta master.";
-
+      let friendlyMessage = "Erro ao criar conta master.";
       if (err.code === 'auth/email-already-in-use') {
-        friendlyMessage =
-          "Conta master já existe.";
+        friendlyMessage = "Conta master já existe.";
       }
-
       if (err.code === 'permission-denied') {
-        friendlyMessage =
-          "Firestore bloqueou gravação.";
+        friendlyMessage = "Firestore bloqueou gravação.";
       }
-
       setError(friendlyMessage);
     }
   }
 
-  async function onSubmit(
-    data: SignupFormValues
-  ) {
-
+  async function onSubmit(data: SignupFormValues) {
     // BLOQUEIO ABSOLUTO
-    if (submitLock.current) {
-      return;
-    }
+    if (submitLock.current) return;
 
     submitLock.current = true;
-
     setLoading(true);
-
     setError(null);
 
     let createdUser = null;
 
     try {
-
       console.log("1 - VALIDANDO FIREBASE");
 
       if (!auth || !firestore) {
@@ -261,76 +196,49 @@ export default function SignupPage() {
 
       // MASTER
       if (data.email === 'admin@clockwise.com') {
-
         await handleMasterAdminSignup(data);
-
         return;
       }
 
       console.log("2 - CREATE AUTH");
 
       // AUTH
-      const userCredential =
-        await createUserWithEmailAndPassword(
-          auth,
-          data.email.trim().toLowerCase(),
-          data.password
-        );
-
-      createdUser = userCredential.user;
-
-      console.log(
-        "3 - AUTH OK:",
-        createdUser.uid
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        data.email.trim().toLowerCase(),
+        data.password
       );
 
-      // TENANT ID
-      const tenantId =
-        data.cnpj.replace(/\D/g, '');
+      createdUser = userCredential.user;
+      console.log("3 - AUTH OK:", createdUser.uid);
 
+      // TENANT ID
+      const tenantId = data.cnpj.replace(/\D/g, '');
       if (!tenantId) {
         throw new Error("CNPJ inválido.");
       }
 
       // REFS
-      const tenantDocRef =
-        doc(firestore, "tenants", tenantId);
-
-      const userDocRef =
-        doc(firestore, "users", createdUser.uid);
-
-      const employeeDocRef =
-        doc(firestore, "employees", createdUser.uid);
+      const tenantDocRef = doc(firestore, "tenants", tenantId);
+      const userDocRef = doc(firestore, "users", createdUser.uid);
+      const employeeDocRef = doc(firestore, "employees", createdUser.uid);
 
       console.log("4 - CREATE TENANT");
 
       // TENANT
       await setDoc(tenantDocRef, {
-
         id: tenantId,
-
         name: data.companyName,
-
         cnpj: data.cnpj,
-
         address: data.address,
-
         ie: data.ie || '',
-
         cei: data.cei || '',
-
         city: data.city,
-
         state: data.state,
-
         plan: data.plan,
-
         paymentDay: Number(data.paymentDay),
-
         status: 'Ativa',
-
         paymentStatus: 'Em dia',
-
         createdAt: new Date().toISOString(),
       });
 
@@ -338,19 +246,12 @@ export default function SignupPage() {
 
       // USER
       await setDoc(userDocRef, {
-
         uid: createdUser.uid,
-
         name: data.name,
-
         email: data.email.trim().toLowerCase(),
-
         role: "admin",
-
         status: 'Ativo',
-
         tenantId,
-
         createdAt: new Date().toISOString(),
       });
 
@@ -358,40 +259,22 @@ export default function SignupPage() {
 
       // EMPLOYEE
       await setDoc(employeeDocRef, {
-
         id: createdUser.uid,
-
         uid: createdUser.uid,
-
         matricula: "ADM-001",
-
         name: data.name,
-
         email: data.email.trim().toLowerCase(),
-
         cpf: `ADMIN-${tenantId}`,
-
         celular: '',
-
         role: "Administrador Geral",
-
         setor: "Administração",
-
         localTrabalho: "Matriz",
-
         scheduleId: '',
-
         accessLevel: "admin",
-
         status: 'Ativo',
-
-        admissionDate:
-          new Date().toISOString().split('T')[0],
-
+        admissionDate: new Date().toISOString().split('T')[0],
         tenantId,
-
         isFirstAdmin: true,
-
         createdAt: new Date().toISOString(),
       });
 
@@ -399,81 +282,41 @@ export default function SignupPage() {
 
       toast({
         title: "Sucesso",
-        description:
-          "Empresa criada com sucesso.",
+        description: "Empresa criada com sucesso.",
       });
 
       router.push('/login');
-
     } catch (err: any) {
-
       console.error("REAL ERROR:", err);
 
       // ROLLBACK USER AUTH
       if (createdUser) {
-
         try {
-
-          console.log(
-            "ROLLBACK AUTH USER"
-          );
-
+          console.log("ROLLBACK AUTH USER");
           await deleteUser(createdUser);
-
-          console.log(
-            "ROLLBACK SUCCESS"
-          );
-
+          console.log("ROLLBACK SUCCESS");
         } catch (rollbackError) {
-
-          console.error(
-            "ROLLBACK ERROR:",
-            rollbackError
-          );
+          console.error("ROLLBACK ERROR:", rollbackError);
         }
       }
 
-      let friendlyMessage =
-        err.message ||
-        "Erro ao criar conta.";
-
-      if (
-        err.code ===
-        'auth/email-already-in-use'
-      ) {
-
-        friendlyMessage =
-          "Este e-mail já está em uso.";
+      let friendlyMessage = err.message || "Erro ao criar conta.";
+      if (err.code === 'auth/email-already-in-use') {
+        friendlyMessage = "Este e-mail já está em uso.";
       }
-
-      if (
-        err.code ===
-        'permission-denied'
-      ) {
-
-        friendlyMessage =
-          "Firestore bloqueou a gravação. Verifique as regras.";
+      if (err.code === 'permission-denied') {
+        friendlyMessage = "Firestore bloqueou a gravação. Verifique as regras.";
       }
-
       setError(friendlyMessage);
-
     } finally {
-
       submitLock.current = false;
-
       setLoading(false);
     }
   }
 
   return (
-
     <main className="flex min-h-screen w-full flex-col items-center justify-center bg-gray-50 p-4">
-
-      <Button
-        asChild
-        variant="ghost"
-        className="absolute left-4 top-4"
-      >
+      <Button asChild variant="ghost" className="absolute left-4 top-4">
         <Link href="/login">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Voltar
@@ -481,29 +324,19 @@ export default function SignupPage() {
       </Button>
 
       <Card className="w-full max-w-lg">
-
         <CardHeader className="text-center">
-
           <CardTitle className="flex items-center justify-center gap-2 text-2xl">
             <Building />
             ClockWise
           </CardTitle>
-
           <CardDescription>
             Cadastro SaaS Multiempresa
           </CardDescription>
-
         </CardHeader>
 
         <CardContent>
-
           <Form {...form}>
-
-            <form
-              onSubmit={form.handleSubmit(onSubmit)}
-              className="space-y-6"
-            >
-
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <h3 className="text-lg font-semibold border-b pb-2">
                 Administrador
               </h3>
@@ -529,11 +362,7 @@ export default function SignupPage() {
                   <FormItem>
                     <FormLabel>E-mail*</FormLabel>
                     <FormControl>
-                      <Input
-                        type="email"
-                        autoComplete="email"
-                        {...field}
-                      />
+                      <Input type="email" autoComplete="email" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -547,11 +376,7 @@ export default function SignupPage() {
                   <FormItem>
                     <FormLabel>Senha*</FormLabel>
                     <FormControl>
-                      <Input
-                        type="password"
-                        autoComplete="new-password"
-                        {...field}
-                      />
+                      <Input type="password" autoComplete="new-password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -607,7 +432,6 @@ export default function SignupPage() {
               />
 
               <div className="grid grid-cols-2 gap-4">
-
                 <FormField
                   control={form.control}
                   name="city"
@@ -629,79 +453,54 @@ export default function SignupPage() {
                     <FormItem>
                       <FormLabel>UF*</FormLabel>
                       <FormControl>
-                        <Input
-                          maxLength={2}
-                          {...field}
-                        />
+                        <Input maxLength={2} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
               </div>
 
               {/* PLANO */}
-
               <FormField
                 control={form.control}
                 name="plan"
                 render={({ field }) => (
-
                   <FormItem className="space-y-3">
-
-                    <FormLabel>
-                      Plano
-                    </FormLabel>
-
+                    <FormLabel>Plano</FormLabel>
                     <FormControl>
-
                       <RadioGroup
                         value={field.value}
                         onValueChange={field.onChange}
                         className="space-y-2"
                       >
-
                         <Label className="flex items-center gap-2 border rounded-md p-3 cursor-pointer">
                           <RadioGroupItem value="soft" />
                           Soft
                         </Label>
-
                         <Label className="flex items-center gap-2 border rounded-md p-3 cursor-pointer">
                           <RadioGroupItem value="plus" />
                           Plus
                         </Label>
-
                         <Label className="flex items-center gap-2 border rounded-md p-3 cursor-pointer">
                           <RadioGroupItem value="prime" />
                           Prime
                         </Label>
-
                       </RadioGroup>
-
                     </FormControl>
-
                     <FormMessage />
-
                   </FormItem>
                 )}
               />
 
               {/* PAGAMENTO */}
-
               <FormField
                 control={form.control}
                 name="paymentDay"
                 render={({ field }) => (
-
                   <FormItem>
-
-                    <FormLabel>
-                      Dia do Pagamento*
-                    </FormLabel>
-
+                    <FormLabel>Dia do Pagamento*</FormLabel>
                     <FormControl>
-
                       <select
                         className="w-full border rounded-md h-10 px-3"
                         value={field.value}
@@ -714,29 +513,17 @@ export default function SignupPage() {
                         <option value="25">Dia 25</option>
                         <option value="30">Dia 30</option>
                       </select>
-
                     </FormControl>
-
                     <FormMessage />
-
                   </FormItem>
                 )}
               />
 
               {error && (
-
                 <Alert variant="destructive">
-
                   <AlertCircle className="h-4 w-4" />
-
-                  <AlertTitle>
-                    Erro
-                  </AlertTitle>
-
-                  <AlertDescription>
-                    {error}
-                  </AlertDescription>
-
+                  <AlertTitle>Erro</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
 
@@ -745,7 +532,6 @@ export default function SignupPage() {
                 className="w-full h-12 text-lg"
                 disabled={loading}
               >
-
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -754,17 +540,11 @@ export default function SignupPage() {
                 ) : (
                   'Criar Conta'
                 )}
-
               </Button>
-
             </form>
-
           </Form>
-
         </CardContent>
-
       </Card>
-
     </main>
   );
 }
