@@ -5,3 +5,18 @@ runConfig:
   # Increase this value if you'd like to automatically spin up
   # more instances in response to increased traffic.
   maxInstances: 1
+
+# 🚀 ADICIONE ESTE BLOCO ABAIXO COM AS SUAS CHAVES REAIS DO CLOCKWISE
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "SUA_API_KEY_AQUI"
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "seu-projeto.firebaseapp.com"
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "seu-projeto-id"
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "seu-projeto.appspot.com"
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "123456789012"
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:123456789012:web:abcdef123456"
