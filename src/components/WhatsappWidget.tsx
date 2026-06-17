@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { doc, getDoc } from "firebase/firestore";
-import { firestore } from "@/firebase"; 
+import { firestore } from "@/lib/data"; // 🚀 Importação direta e segura do cliente isolado
 import { cn } from "@/lib/utils";
 
 export default function WhatsappWidget() {

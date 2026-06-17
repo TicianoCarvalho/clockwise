@@ -1,58 +1,48 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { doc, getDoc } from "firebase/firestore";
-import { firestore } from "@/firebase"; // Importa o singleton corrigido acima
-import { cn } from "@/lib/utils";
-import { type SupportSettings } from "@/lib/data";
+import React, { createContext, useContext, type ReactNode } from 'react';
+import type { FirebaseApp } from 'firebase/app';
+import type { Auth } from 'firebase/auth';
+import type { Firestore } from 'firebase/firestore';
 
-const WhatsAppIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.433-9.89-9.89-9.89-5.458 0-9.887 4.434-9.889 9.89-.001 2.265.655 4.398 1.876 6.204l-1.244 4.549 4.62-1.211z" />
-  </svg>
-);
+interface FirebaseContextType {
+  firebaseApp: FirebaseApp | null;
+  auth: Auth | null;
+  firestore: Firestore | null;
+}
 
-export default function WhatsappWidget() {
-  const [settings, setSettings] = useState<SupportSettings | null>(null);
+const FirebaseContext = createContext<FirebaseContextType>({
+  firebaseApp: null,
+  auth: null,
+  firestore: null,
+});
 
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        // Busca direta no Firestore - Não gera erro 404
-        const ref = doc(firestore, "support_settings", "global");
-        const snap = await getDoc(ref);
+interface FirebaseProviderProps {
+  children: ReactNode;
+  firebaseApp: FirebaseApp;
+  auth: Auth;
+  firestore: Firestore;
+}
 
-        if (snap.exists()) {
-          setSettings(snap.data() as SupportSettings);
-        }
-      } catch (error) {
-        console.error("Erro ao carregar WhatsApp via Firestore:", error);
-      }
-    };
-
-    loadSettings();
-  }, []);
-
-  if (!settings?.widgetEnabled || !settings?.whatsappNumber) {
-    return null;
-  }
-
-  const number = settings.whatsappNumber.replace(/\D/g, "");
-  const text = encodeURIComponent("Olá! Preciso de ajuda com o sistema ClockWise.");
-  const link = `https://wa.me/${number}?text=${text}`;
-
+// Isso é o que o layout.tsx e o client-provider.tsx precisam encontrar aqui dentro!
+export function FirebaseProvider({ children, firebaseApp, auth, firestore }: FirebaseProviderProps) {
   return (
-    <Link
-      href={link}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={cn(
-        "fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white shadow-lg transition-transform hover:scale-110 active:scale-100"
-      )}
-      aria-label="Fale conosco no WhatsApp"
-    >
-      <WhatsAppIcon />
-    </Link>
+    <FirebaseContext.Provider value={{ firebaseApp, auth, firestore }}>
+      {children}
+    </FirebaseContext.Provider>
   );
+}
+
+// Isso abastece todas as páginas do seu Dashboard
+export function useFirebase() {
+  const context = useContext(FirebaseContext);
+  if (!context) {
+    throw new Error('useFirebase deve ser usado dentro de um FirebaseProvider');
+  }
+  return context;
+}
+
+// Mantém compatibilidade com chamadas antigas
+export function useMemoFirebase() {
+  return useFirebase();
 }
