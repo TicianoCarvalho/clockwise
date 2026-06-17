@@ -1,26 +1,29 @@
 'use client';
 
-import { firebaseApp, auth, firestore, storage } from '@/lib/data'; // Puxa do seu singleton robusto
+// 1. Puxa as instâncias limpas e seguras do singleton de cliente
+import { firebaseApp, auth, firestore, storage } from '@/lib/data';
 
-// Função substituta para manter a compatibilidade com providers legados que a chamavam
+// 2. Mantém a função de inicialização para compatibilidade com os providers legados
 export function initializeFirebase() {
   return {
     firebaseApp,
     auth,
     firestore,
-    storage
+    storage,
   };
 }
 
-// Mantém os exports nomeados que outras páginas utilizam
+// 3. Mantém os exports nomeados diretos das instâncias do SDK do cliente
 export { firebaseApp, auth, firestore, storage };
 
-// Re-exporta os providers e hooks internos da pasta para consertar o dashboard
+// 4. 🚀 Re-exporta o FirebaseProvider e os hooks (useFirebase, useMemoFirebase) do arquivo provider
 export * from './provider';
+
+// 5. Re-exporta o wrapper do cliente
 export * from './client-provider';
 
-// Proteção caso existam os arquivos abaixo. Se o compilador reclamar de algum deles sumido, 
-// certifique-se de que eles existem nesta pasta ou comente a linha correspondente.
+// 6. Proteções e retrocompatibilidade com hooks e utilitários internos da pasta.
+// Se o compilador reclamar que algum deles não existe, você pode comentar a linha.
 export * from './firestore/use-collection';
 export * from './firestore/use-doc';
 export * from './errors';
