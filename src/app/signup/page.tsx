@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/alert';
 
 // ✅ CORREÇÃO: Importando as instâncias singleton diretamente do seu arquivo de configuração
-import { auth, firestore } from '@/lib/firebase';
+import { auth, firestore } from '@/lib/data';
 
 import {
   createUserWithEmailAndPassword,
