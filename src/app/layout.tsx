@@ -4,11 +4,8 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { FirebaseProvider } from '@/firebase/provider';
 
-import {
-  app,
-  auth,
-  firestore
-} from '@/firebase';
+// 🚀 CORREÇÃO: Puxando as instâncias limpas e seguras do lib/data
+import { firebaseApp, auth, firestore } from '@/lib/data';
 
 import { AuthProvider } from "@/contexts/auth-context";
 
@@ -31,17 +28,15 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="antialiased font-sans">
-        {/* 
-          FirebaseProvider:
-          Inicializa Firebase App + Auth + Firestore
+        {/* FirebaseProvider:
+          Inicializa Firebase App + Auth + Firestore usando as instâncias da lib/data
         */}
         <FirebaseProvider
-          firebaseApp={app}
+          firebaseApp={firebaseApp}
           auth={auth}
           firestore={firestore}
         >
-          {/* 
-            AuthProvider:
+          {/* AuthProvider:
             Gerencia sessão do usuário e tenant
           */}
           <AuthProvider>
@@ -50,7 +45,6 @@ export default function RootLayout({
         </FirebaseProvider>
 
         {/* COMPONENTES GLOBAIS */}
-        {/* Agora o componente será renderizado sem erros de roteamento de API */}
         <WhatsappWidget />
 
         <Toaster />
